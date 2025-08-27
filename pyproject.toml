@@ -1,0 +1,62 @@
+[project]
+name = "agentic-layer-sdk"
+version = "0.1.0"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agentic-layer-sdk-adk",
+]
+
+[dependency-groups]
+dev = [
+    "poethepoet>=0.31.1",
+    "mypy>=1.17.0",
+    "ruff>=0.12.7",
+    "pytest>=8.1.1",
+    "bandit[toml]>=1.7.8",
+]
+
+[tool.uv.workspace]
+members = [
+    "adk",
+]
+
+[tool.uv.sources]
+agentic-layer-sdk-adk = { workspace = true }
+
+[tool.poe.tasks]
+test = "pytest --strict-config"
+test-watch = "ptw ."
+
+format = "ruff format"
+lint = "ruff check --fix"
+ruff = ["format", "lint"]
+
+bandit = "bandit -c pyproject.toml -r ."
+mypy = "mypy ."
+
+check = ["mypy", "bandit", "ruff", "test"]
+
+[tool.ruff]
+# Allow lines to be as long as 120.
+line-length = 120
+
+
+[tool.ruff.lint]
+# https://docs.astral.sh/ruff/rules/
+# I001 --> enable import sorting rules
+# Q --> enable flake8-quotes rules for consistent quote style
+# N --> pep8-naming for proper naming conventions
+# PT --> flake8-pytest-style for pytest best practices
+# TID251 --> banned relative imports
+# DTZ --> datetime timezone awareness
+extend-select = ["Q", "N", "I001", "PT", "TID251", "DTZ"]
+
+[tool.bandit]
+exclude_dirs = [".cache", ".venv"]
+skips = [
+    "B104", # hardcoded_bind_all_interfaces: Accept this for now.
+]
+
+[tool.bandit.assert_used]
+skips = ["*_test.py", "*test_*.py"]

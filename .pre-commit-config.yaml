@@ -1,0 +1,40 @@
+# See https://pre-commit.com for more information
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-ast
+      - id: check-case-conflict
+      - id: check-json
+      - id: check-toml
+      - id: name-tests-test
+        args: [ --pytest-test-first ]
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: requirements-txt-fixer
+      - id: mixed-line-ending
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    # uv version.
+    rev: 0.8.4
+    hooks:
+      # Update the uv lockfile
+      - id: uv-lock
+
+  - repo: local
+    hooks:
+      - id: python-lint
+        name: python-lint
+        language: system
+        entry: "uv run poe lint"
+        types_or: [ python ]
+        pass_filenames: false
+      - id: python-ruff
+        name: python-ruff
+        language: system
+        entry: "uv run poe ruff"
+        types_or: [ python ]
+        pass_filenames: false
