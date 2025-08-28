@@ -17,6 +17,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from .callback_tracer_plugin import CallbackTracerPlugin
 from .otel import setup_otel
 
 
@@ -51,6 +52,7 @@ def to_a2a(agent: BaseAgent) -> Starlette:
             session_service=InMemorySessionService(),  # type: ignore
             memory_service=InMemoryMemoryService(),  # type: ignore
             credential_service=InMemoryCredentialService(),  # type: ignore
+            plugins=[CallbackTracerPlugin()],
         )
 
     # Create A2A components
