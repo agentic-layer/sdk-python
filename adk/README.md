@@ -13,7 +13,7 @@ SDK for Google ADK that helps to get agents configured in the Agentic Layer quic
 Dependencies can be installed via pip or the tool of your choice:
 
 ```shell
-pip install google-adk-agentic-layer
+pip install agentic-layer-sdk-adk
 ```
 
 Basic usage example:
