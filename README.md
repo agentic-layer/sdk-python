@@ -18,9 +18,9 @@ brew bundle
 # Install pre-commit hooks (if you want to commit code)
 pre-commit install
 # Install Python dependencies
-uv sync
+make build
 # Run tests and other checks
-uv run poe check
+make check
 ```
 
 ## Creating a release

@@ -28,4 +28,4 @@ jobs:
         run: uv sync --all-packages
 
       - name: Run checks
-        run: uv run poe check
+        run: make check
