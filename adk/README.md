@@ -6,6 +6,7 @@ SDK for Google ADK that helps to get agents configured in the Agentic Layer quic
 
 - Configures OTEL (Tracing, Metrics, Logging)
 - Converts an ADK agent into an instrumented starlette app with health endpoint
+- Set log level via env var `LOGLEVEL` (default: `INFO`)
 
 ## Usage
 

@@ -1,4 +1,5 @@
 import logging
+import os
 
 from openinference.instrumentation.google_adk import GoogleADKInstrumentor
 from opentelemetry import metrics, trace
@@ -34,7 +35,8 @@ def setup_otel():
     set_logger_provider(provider)
 
     handler = LoggingHandler(level=logging.NOTSET, logger_provider=provider)
-    logging.getLogger().setLevel(logging.INFO)
+    log_level = os.environ.get("LOGLEVEL", "INFO")
+    logging.getLogger().setLevel(log_level)
     # Attach OTLP handler to root logger
     logging.getLogger().addHandler(handler)
 
