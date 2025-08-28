@@ -1,5 +1,5 @@
 import pytest
-from agenticlayer.a2a_starlette import agent_to_a2a_starlette
+from agenticlayer.agent_to_a2a import to_a2a
 from google.adk.agents.base_agent import BaseAgent
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
@@ -16,7 +16,7 @@ class TestA2AStarlette:
     @pytest.fixture
     def starlette_app(self, test_agent: BaseAgent) -> Starlette:
         """Create a Starlette app with the test agent."""
-        return agent_to_a2a_starlette(test_agent)
+        return to_a2a(test_agent)
 
     @pytest.fixture
     def client(self, starlette_app: Starlette) -> TestClient:

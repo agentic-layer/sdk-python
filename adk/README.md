@@ -19,11 +19,9 @@ pip install agentic-layer-sdk-adk
 Basic usage example:
 
 ```python
-from agenticlayer.a2a_starlette import agent_to_a2a_starlette
-from agenticlayer.otel import setup_otel
+from agenticlayer.agent_to_a2a import to_a2a
 
 root_agent = ...  # Your ADK agent here
 
-setup_otel()
-app = agent_to_a2a_starlette(root_agent)
+app = to_a2a(root_agent)
 ```

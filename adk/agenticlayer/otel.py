@@ -1,5 +1,4 @@
 import logging
-import os
 
 from openinference.instrumentation.google_adk import GoogleADKInstrumentor
 from opentelemetry import metrics, trace
@@ -17,6 +16,8 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
 
 def setup_otel() -> None:
+    """Set up OpenTelemetry tracing, logging and metrics."""
+
     # Traces
     _tracer_provider = trace_sdk.TracerProvider()
     _tracer_provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter()))
@@ -34,15 +35,12 @@ def setup_otel() -> None:
     # Sets the global default logger provider
     set_logger_provider(logger_provider)
 
-    handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
-    log_level = os.environ.get("LOGLEVEL", "INFO")
-    logging.getLogger().setLevel(log_level)
     # Attach OTLP handler to root logger
-    logging.getLogger().addHandler(handler)
+    logging.getLogger().addHandler(LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider))
 
-    # Metrics
-    meter_provider = MeterProvider(
-        metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter())],
-    )
     # Sets the global default meter provider
-    metrics.set_meter_provider(meter_provider)
+    metrics.set_meter_provider(
+        MeterProvider(
+            metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter())],
+        )
+    )
