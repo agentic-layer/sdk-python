@@ -1,3 +1,4 @@
+import logging
 import os
 
 from a2a.server.apps import A2AStarletteApplication
@@ -39,6 +40,7 @@ def to_a2a(agent: BaseAgent) -> Starlette:
     # Set up ADK logging to ensure logs are visible when using uvicorn directly
     log_level = os.environ.get("LOGLEVEL", "INFO")
     setup_adk_logger(log_level)  # type: ignore
+    logger = logging.getLogger(__name__)
 
     # Set up OpenTelemetry instrumentation, logging and metrics
     setup_otel()
@@ -79,10 +81,12 @@ def to_a2a(agent: BaseAgent) -> Starlette:
     # Get the agent card URL from environment variable *only*
     # At this point, we don't know the applications port and the host is unknown when running in k8s or similar
     agent_card_url = os.environ.get("A2A_AGENT_CARD_URL", None)
+    logger.debug(f"Using agent card url: {agent_card_url}")
 
     # Add startup handler to build the agent card and configure A2A routes
     @app.on_event("startup")
     async def setup_a2a() -> None:
+        logger.debug("Setting up A2A app")
         # Build agent card
         card_builder = AgentCardBuilder(
             agent=agent,
