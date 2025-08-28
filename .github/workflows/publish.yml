@@ -29,13 +29,20 @@ jobs:
           python-version-file: "pyproject.toml"
 
       - name: Install Dependencies
-        run: uv sync --all-packages
+        working-directory: adk
+        run: uv sync
 
       - name: uv Version Bump
-        run: uv version ${{ github.ref_name }}
+        working-directory: adk
+        run: |-
+          VERSION=${{ github.ref_name }}
+          uv version "${VERSION#v}"
 
       - name: 'Build adk package'
-        run: uv build --project adk
+        working-directory: adk
+        run: uv build
 
       - name: 'Publish adk package to PyPI'
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: adk/dist
