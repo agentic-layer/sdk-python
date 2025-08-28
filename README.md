@@ -22,3 +22,8 @@ uv sync
 # Run tests and other checks
 uv run poe check
 ```
+
+## Creating a release
+
+Create and push a GIT tag like `v0.1.0` and GitHub workflows will build and publish the package to PyPI.
+Follow [Semantic Versioning](https://semver.org/).
