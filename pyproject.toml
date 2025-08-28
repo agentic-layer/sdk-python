@@ -9,12 +9,18 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "poethepoet>=0.31.1",
-    "mypy>=1.17.0",
-    "ruff>=0.12.7",
-    "pytest>=8.1.1",
+    "mypy[reports]>=1.12.0,<2",
+    "ruff>=0.11.2",
     "bandit[toml]>=1.7.8",
+    "pip-audit>=2.5,<3",
+    "pytest>=8.3.3,<9",
+    "pytest-cov>=5.0.0,<7",
+    "types-protobuf>=6.30.2.20250822",
 ]
+
+
+[tool.uv]
+package = false
 
 [tool.uv.workspace]
 members = [
@@ -24,23 +30,28 @@ members = [
 [tool.uv.sources]
 agentic-layer-sdk-adk = { workspace = true }
 
-[tool.poe.tasks]
-test = "pytest --strict-config"
-test-watch = "ptw ."
 
-format = "ruff format"
-lint = "ruff check --fix"
-ruff = ["format", "lint"]
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-bandit = "bandit -c pyproject.toml -r ."
-mypy = "mypy ."
 
-check = ["mypy", "bandit", "ruff", "test"]
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = "test"
+pythonpath = ["."]
+addopts = """\
+--strict-config \
+--cov app \
+--cov-report html \
+--import-mode=importlib \
+--show-capture=no \
+"""
+
 
 [tool.ruff]
 # Allow lines to be as long as 120.
 line-length = 120
-
 
 [tool.ruff.lint]
 # https://docs.astral.sh/ruff/rules/
@@ -52,11 +63,13 @@ line-length = 120
 # DTZ --> datetime timezone awareness
 extend-select = ["Q", "N", "I001", "PT", "TID251", "DTZ"]
 
+
 [tool.bandit]
-exclude_dirs = [".cache", ".venv"]
-skips = [
-    "B104", # hardcoded_bind_all_interfaces: Accept this for now.
-]
+exclude_dirs = [".venv"]
 
 [tool.bandit.assert_used]
 skips = ["*_test.py", "*test_*.py"]
+
+
+[tool.mypy]
+strict = true

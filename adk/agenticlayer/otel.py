@@ -16,7 +16,7 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
 
-def setup_otel():
+def setup_otel() -> None:
     # Traces
     _tracer_provider = trace_sdk.TracerProvider()
     _tracer_provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter()))
@@ -29,20 +29,20 @@ def setup_otel():
     HTTPXClientInstrumentor().instrument()
 
     # Logs
-    provider = LoggerProvider()
-    provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter()))
+    logger_provider = LoggerProvider()
+    logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter()))
     # Sets the global default logger provider
-    set_logger_provider(provider)
+    set_logger_provider(logger_provider)
 
-    handler = LoggingHandler(level=logging.NOTSET, logger_provider=provider)
+    handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
     log_level = os.environ.get("LOGLEVEL", "INFO")
     logging.getLogger().setLevel(log_level)
     # Attach OTLP handler to root logger
     logging.getLogger().addHandler(handler)
 
     # Metrics
-    provider = MeterProvider(
+    meter_provider = MeterProvider(
         metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter())],
     )
     # Sets the global default meter provider
-    metrics.set_meter_provider(provider)
+    metrics.set_meter_provider(meter_provider)

@@ -17,7 +17,7 @@ def agent_to_a2a_starlette(agent: BaseAgent) -> Starlette:
 
     StarletteInstrumentor().instrument_app(app)
 
-    def health(_: Request):
+    def health(_: Request) -> JSONResponse:
         return JSONResponse(content={"status": "healthy"})
 
     app.add_route("/health", health)

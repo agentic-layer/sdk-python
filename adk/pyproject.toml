@@ -12,9 +12,6 @@ dependencies = [
     "opentelemetry-instrumentation-httpx",
 ]
 
-[dependency-groups]
-test = []
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
