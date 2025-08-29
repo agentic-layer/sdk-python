@@ -1,5 +1,7 @@
+import contextlib
 import logging
 import os
+from typing import AsyncIterator
 
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -17,6 +19,7 @@ from opentelemetry.instrumentation.starlette import StarletteInstrumentor
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from .callback_tracer_plugin import CallbackTracerPlugin
 from .otel import setup_otel
@@ -68,17 +71,9 @@ def to_a2a(agent: BaseAgent) -> Starlette:
 
     request_handler = DefaultRequestHandler(agent_executor=agent_executor, task_store=task_store)
 
-    # Create a Starlette app that will be configured during startup
-    app = Starlette()
-
     # Add a simple health check endpoint for readiness/liveness probes
     def health(_: Request) -> JSONResponse:
         return JSONResponse(content={"status": "healthy"})
-
-    app.add_route("/health", health)
-
-    # Instrument the Starlette app with OpenTelemetry
-    StarletteInstrumentor().instrument_app(app)
 
     # Get the agent card URL from environment variable *only*
     # At this point, we don't know the applications port and the host is unknown when running in k8s or similar
@@ -86,8 +81,8 @@ def to_a2a(agent: BaseAgent) -> Starlette:
     logger.debug(f"Using agent card url: {agent_card_url}")
 
     # Add startup handler to build the agent card and configure A2A routes
-    @app.on_event("startup")
-    async def setup_a2a() -> None:
+    @contextlib.asynccontextmanager
+    async def lifespan(app: Starlette) -> AsyncIterator[None]:
         logger.debug("Setting up A2A app")
         # Build agent card
         card_builder = AgentCardBuilder(
@@ -107,5 +102,12 @@ def to_a2a(agent: BaseAgent) -> Starlette:
         a2a_app.add_routes_to_app(
             app,
         )
+        yield
 
-    return app
+    # Create a Starlette app that will be configured during startup
+    starlette_app = Starlette(lifespan=lifespan, routes=[Route("/health", health)])
+
+    # Instrument the Starlette app with OpenTelemetry
+    StarletteInstrumentor().instrument_app(starlette_app)
+
+    return starlette_app
