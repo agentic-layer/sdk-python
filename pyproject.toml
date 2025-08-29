@@ -42,7 +42,7 @@ testpaths = "test"
 pythonpath = ["."]
 addopts = """\
 --strict-config \
---cov app \
+--cov agenticlayer \
 --cov-report html \
 --import-mode=importlib \
 --show-capture=no \
