@@ -40,6 +40,8 @@ def to_a2a(agent: BaseAgent) -> Starlette:
     # Set up ADK logging to ensure logs are visible when using uvicorn directly
     log_level = os.environ.get("LOGLEVEL", "INFO")
     setup_adk_logger(log_level)  # type: ignore
+    # Set log level for urllib to WARNING to reduce noise (like sending logs to OTLP)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
     logger = logging.getLogger(__name__)
 
     # Set up OpenTelemetry instrumentation, logging and metrics
