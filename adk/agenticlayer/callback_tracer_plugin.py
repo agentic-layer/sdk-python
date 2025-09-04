@@ -52,6 +52,7 @@ def _set_span_attributes_from_callback_context(span: Any, callback_context: Call
     conversation_id = (
         callback_context.state.to_dict().get("conversation_id") or callback_context._invocation_context.session.id
     )
+    span.set_attribute("agent_name", callback_context.agent_name)
     span.set_attribute("conversation_id", conversation_id)
     span.set_attribute("invocation_id", callback_context.invocation_id)
     span.set_attributes(callback_context.state.to_dict())
