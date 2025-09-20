@@ -20,8 +20,13 @@ Basic usage example:
 
 ```python
 from agenticlayer.agent_to_a2a import to_a2a
+from agenticlayer.otel import setup_otel
 
 root_agent = ...  # Your ADK agent here
 
+# Set up OpenTelemetry instrumentation, logging and metrics
+setup_otel()
+
+# Create starlette app with A2A protocol
 app = to_a2a(root_agent)
 ```

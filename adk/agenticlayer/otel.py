@@ -18,6 +18,9 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 def setup_otel() -> None:
     """Set up OpenTelemetry tracing, logging and metrics."""
 
+    # Set log level for urllib to WARNING to reduce noise (like sending logs to OTLP)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+
     # Traces
     _tracer_provider = trace_sdk.TracerProvider()
     _tracer_provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter()))
