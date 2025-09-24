@@ -29,10 +29,10 @@ The SDK supports configuration through environment variables:
 
 ### Application Configuration
 
-| Variable | Description | Default | Example                        |
-|----------|-------------|---------|--------------------------------|
-| `LOGLEVEL` | Sets the log level for the application | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
-| `A2A_AGENT_CARD_URL` | URL for the A2A agent card endpoint | `None` | `https://my-agent.example.com/.well-known/agent-card.json` |
+| Variable            | Description                              | Default | Example                             |
+|---------------------|------------------------------------------|---------|-------------------------------------|
+| `LOGLEVEL`          | Sets the log level for the application   | `INFO`  | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `AGENT_A2A_RPC_URL` | RPC URL inserted into the A2A agent card | `None`  | `https://my-agent.example.com/a2a`  |
 
 ### OpenTelemetry Configuration
 
