@@ -23,6 +23,22 @@ make build
 make check
 ```
 
+## Environment Variables
+
+The SDK supports configuration through environment variables:
+
+### Application Configuration
+
+| Variable | Description | Default | Example                        |
+|----------|-------------|---------|--------------------------------|
+| `LOGLEVEL` | Sets the log level for the application | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `A2A_AGENT_CARD_URL` | URL for the A2A agent card endpoint | `None` | `https://my-agent.example.com/.well-known/agent-card.json` |
+
+### OpenTelemetry Configuration
+
+The SDK automatically configures OpenTelemetry observability. You can customize the OTLP exporters using standard OpenTelemetry environment variables:
+https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/
+
 ## Creating a release
 
 Create and push a GIT tag like `v0.1.0` and GitHub workflows will build and publish the package to PyPI.
