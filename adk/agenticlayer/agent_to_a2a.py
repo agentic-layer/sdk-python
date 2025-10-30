@@ -6,6 +6,7 @@ from typing import AsyncIterator
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
+from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
 from google.adk.a2a.utils.agent_card_builder import AgentCardBuilder
 from google.adk.agents.base_agent import BaseAgent
@@ -17,11 +18,14 @@ from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from opentelemetry.instrumentation.starlette import StarletteInstrumentor
 from starlette.applications import Starlette
-from starlette.requests import Request
-from starlette.responses import JSONResponse
-from starlette.routing import Route
 
 from .callback_tracer_plugin import CallbackTracerPlugin
+
+
+class HealthCheckFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Check if the log message contains the well known path of the card, which is used for health checks
+        return record.getMessage().find(AGENT_CARD_WELL_KNOWN_PATH) == -1
 
 
 def to_a2a(agent: BaseAgent) -> Starlette:
@@ -44,6 +48,10 @@ def to_a2a(agent: BaseAgent) -> Starlette:
     setup_adk_logger(log_level)  # type: ignore
     logger = logging.getLogger(__name__)
 
+    # Filter out health check logs from uvicorn access logger
+    uvicorn_access_logger = logging.getLogger("uvicorn.access")
+    uvicorn_access_logger.addFilter(HealthCheckFilter())
+
     async def create_runner() -> Runner:
         """Create a runner for the agent."""
         return Runner(
@@ -64,10 +72,6 @@ def to_a2a(agent: BaseAgent) -> Starlette:
     )
 
     request_handler = DefaultRequestHandler(agent_executor=agent_executor, task_store=task_store)
-
-    # Add a simple health check endpoint for readiness/liveness probes
-    def health(_: Request) -> JSONResponse:
-        return JSONResponse(content={"status": "healthy"})
 
     # Get the agent card URL from environment variable *only*
     # At this point, we don't know the applications port and the host is unknown when running in k8s or similar
@@ -100,7 +104,7 @@ def to_a2a(agent: BaseAgent) -> Starlette:
         yield
 
     # Create a Starlette app that will be configured during startup
-    starlette_app = Starlette(lifespan=lifespan, routes=[Route("/health", health)])
+    starlette_app = Starlette(lifespan=lifespan)
 
     # Instrument the Starlette app with OpenTelemetry
     StarletteInstrumentor().instrument_app(starlette_app)

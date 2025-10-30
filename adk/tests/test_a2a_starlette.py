@@ -23,13 +23,6 @@ class TestA2AStarlette:
         """Create a test client."""
         return TestClient(starlette_app)
 
-    def test_health_endpoint(self, client: TestClient) -> None:
-        """Test that the health check endpoint works."""
-        response = client.get("/health")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "healthy"
-
     def test_agent_card_endpoint(self, starlette_app: Starlette, client: TestClient) -> None:
         """Test that the agent card is available at /.well-known/agent-card.json"""
 
