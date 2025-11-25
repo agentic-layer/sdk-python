@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -43,6 +44,17 @@ class TestA2AStarlette:
 
 class TestTelemetryFilter:
     """Test suite for the TelemetryFilter class."""
+    async def create_telemetry_filter(self, app_mock: AsyncMock) -> TelemetryFilter:
+        return TelemetryFilter(
+            app=app_mock,
+            filtered_paths={"/.well-known/agent-card.json"}
+        )
+
+    async def simulate_request(self, path: str) -> tuple[Mock, dict[str, Any], Mock]:
+        scope = {"type": "http", "path": path}
+        receive = Mock()
+        send = Mock()
+        return receive, scope, send
 
     @pytest.mark.anyio
     async def test_telemetry_filter_bypasses_health_checks(self) -> None:
@@ -56,22 +68,13 @@ class TestTelemetryFilter:
         telemetry_filter.otel_middleware = otel_middleware_mock
 
         # Simulate health check request
-        scope = {"type": "http", "path": "/.well-known/agent-card.json"}
-        receive = Mock()
-        send = Mock()
-
+        receive, scope, send = await self.simulate_request("/.well-known/agent-card.json")
         # Call the filter
         await telemetry_filter(scope, receive, send)
 
         # Assert: app was called directly (bypassed OTEL)
         app_mock.assert_called_once_with(scope, receive, send)
         otel_middleware_mock.assert_not_called()
-
-    async def create_telemetry_filter(self, app_mock):
-        return TelemetryFilter(
-            app=app_mock,
-            filtered_paths={"/.well-known/agent-card.json"}
-        )
 
     @pytest.mark.anyio
     async def test_telemetry_filter_allows_regular_requests(self) -> None:
@@ -84,10 +87,8 @@ class TestTelemetryFilter:
         telemetry_filter.otel_middleware = otel_middleware_mock
 
         # Simulate regular request
-        scope = {"type": "http", "path": "/a2a/v1/tasks"}
-        receive = Mock()
-        send = Mock()
-
+        receive, scope, send = await self.simulate_request("/a2a/v1/tasks")
+        # Call the filter
         await telemetry_filter(scope, receive, send)
 
         # Assert: OTEL middleware was used
@@ -104,10 +105,8 @@ class TestTelemetryFilter:
         telemetry_filter.otel_middleware = otel_middleware_mock
 
         # Simulate WebSocket request (non-HTTP)
-        scope = {"type": "websocket", "path": "/ws"}
-        receive = Mock()
-        send = Mock()
-
+        receive, scope, send = await self.simulate_request("/ws")
+        # Call the filter
         await telemetry_filter(scope, receive, send)
 
         # Assert: OTEL middleware was used (non-HTTP requests go through)
