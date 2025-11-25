@@ -39,6 +39,9 @@ The SDK supports configuration through environment variables:
 The SDK automatically configures OpenTelemetry observability. You can customize the OTLP exporters using standard OpenTelemetry environment variables:
 https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/
 
+**Note:** The SDK includes a TelemetryFilter that excludes health check endpoints (like `/.well-known/agent-card.json`) from 
+OpenTelemetry traces and metrics to reduce telemetry noise. This filtering happens at the ASGI middleware level.
+
 ## Creating a release
 
 Create and push a GIT tag like `v0.1.0` and GitHub workflows will build and publish the package to PyPI.
