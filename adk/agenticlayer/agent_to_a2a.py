@@ -43,6 +43,9 @@ def to_a2a(agent: BaseAgent) -> Starlette:
         app = to_a2a(agent)
         # Then run with: uvicorn module:app
     """
+    # Suppress health check logs from OpenTelemetry Starlette instrumentation
+    os.environ.setdefault("OTEL_PYTHON_STARLETTE_EXCLUDED_URLS", AGENT_CARD_WELL_KNOWN_PATH)
+
     # Set up ADK logging to ensure logs are visible when using uvicorn directly
     log_level = os.environ.get("LOGLEVEL", "INFO")
     setup_adk_logger(log_level)  # type: ignore
