@@ -1,5 +1,4 @@
 import logging
-from typing import Any, Awaitable, Callable, MutableMapping, Set
 
 from openinference.instrumentation.google_adk import GoogleADKInstrumentor
 from opentelemetry import metrics, trace
@@ -7,7 +6,6 @@ from opentelemetry._logs import set_logger_provider
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.sdk import trace as trace_sdk
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
@@ -15,48 +13,6 @@ from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-
-
-class TelemetryFilter:
-    """ This filter wraps OpenTelemetry's ASGI middleware and selectively applies
-    telemetry based on request paths. Filtered paths bypass all telemetry
-    generation (traces, metrics, logs) for optimal performance.
-    """
-
-    def __init__(
-        self,
-        app: Callable[..., Any],
-        filtered_paths: Set[str],
-        **otel_kwargs: Any
-    ) -> None:
-
-        self.app = app
-        self.filtered_paths = filtered_paths
-
-        # Create the OpenTelemetry middleware for non-filtered requests
-        self.otel_middleware = OpenTelemetryMiddleware(
-            app,
-            **otel_kwargs
-        )
-
-    async def __call__(
-        self,
-        scope: MutableMapping[str, Any],
-        receive: Callable[[], Awaitable[MutableMapping[str, Any]]],
-        send: Callable[[MutableMapping[str, Any]], Awaitable[None]],
-    ) -> None:
-
-        # Only filter HTTP requests
-        if scope["type"] == "http":
-            path = scope.get("path", "")
-
-            # If path is filtered, bypass OpenTelemetry entirely
-            if path in self.filtered_paths:
-                await self.app(scope, receive, send)
-                return
-
-        # For all other requests, use OpenTelemetry middleware
-        await self.otel_middleware(scope, receive, send)
 
 
 def setup_otel() -> None:

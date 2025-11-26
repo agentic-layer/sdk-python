@@ -16,6 +16,8 @@ from google.adk.cli.utils.logs import setup_adk_logger
 from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
+from opentelemetry.instrumentation.starlette import StarletteInstrumentor
+from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
 from starlette.applications import Starlette
 
 from .callback_tracer_plugin import CallbackTracerPlugin
@@ -106,10 +108,12 @@ def to_a2a(agent: BaseAgent) -> Starlette:
     # Create a Starlette app that will be configured during startup
     starlette_app = Starlette(lifespan=lifespan)
 
-    # Add TelemetryFilter to exclude health check telemetry
+    # Add OpenTelemetryMiddleware to exclude health check telemetry
     starlette_app.add_middleware(
-        TelemetryFilter,  # type: ignore[arg-type]
-        filtered_paths={AGENT_CARD_WELL_KNOWN_PATH},
+        OpenTelemetryMiddleware,
+        excluded_urls = AGENT_CARD_WELL_KNOWN_PATH,
     )
+
+    StarletteInstrumentor().instrument_app(starlette_app)
 
     return starlette_app
