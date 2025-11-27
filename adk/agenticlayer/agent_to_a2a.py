@@ -10,6 +10,7 @@ from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
 from google.adk.a2a.utils.agent_card_builder import AgentCardBuilder
 from google.adk.agents.base_agent import BaseAgent
+from google.adk.apps.app import App
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.auth.credential_service.in_memory_credential_service import InMemoryCredentialService
 from google.adk.cli.utils.logs import setup_adk_logger
@@ -55,13 +56,15 @@ def to_a2a(agent: BaseAgent) -> Starlette:
     async def create_runner() -> Runner:
         """Create a runner for the agent."""
         return Runner(
-            app_name=agent.name or "adk_agent",
-            agent=agent,
+            app=App(
+                name=agent.name or "adk_agent",
+                root_agent=agent,
+                plugins=[CallbackTracerPlugin()],
+            ),
             artifact_service=InMemoryArtifactService(),
             session_service=InMemorySessionService(),  # type: ignore
             memory_service=InMemoryMemoryService(),  # type: ignore
             credential_service=InMemoryCredentialService(),  # type: ignore
-            plugins=[CallbackTracerPlugin()],
         )
 
     # Create A2A components
