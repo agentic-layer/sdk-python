@@ -1,7 +1,5 @@
-import contextlib
 import logging
 import os
-from typing import AsyncIterator
 
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -29,7 +27,7 @@ class HealthCheckFilter(logging.Filter):
         return record.getMessage().find(AGENT_CARD_WELL_KNOWN_PATH) == -1
 
 
-def to_a2a(agent: BaseAgent) -> Starlette:
+async def to_a2a(agent: BaseAgent) -> Starlette:
     """Convert an ADK agent to a A2A Starlette application.
     This is an adaption of google.adk.a2a.utils.agent_to_a2a.
 
@@ -82,32 +80,28 @@ def to_a2a(agent: BaseAgent) -> Starlette:
     agent_card_url = os.environ.get("AGENT_A2A_RPC_URL", os.environ.get("A2A_AGENT_CARD_URL", None))
     logger.debug(f"Using agent card url: {agent_card_url}")
 
-    # Add startup handler to build the agent card and configure A2A routes
-    @contextlib.asynccontextmanager
-    async def lifespan(app: Starlette) -> AsyncIterator[None]:
-        logger.debug("Setting up A2A app")
-        # Build agent card
-        card_builder = AgentCardBuilder(
-            agent=agent,
-            rpc_url=agent_card_url,
-        )
-        # Build the agent card asynchronously
-        agent_card = await card_builder.build()
+    logger.debug("Setting up A2A app")
+    # Build agent card
+    card_builder = AgentCardBuilder(
+        agent=agent,
+        rpc_url=agent_card_url,
+    )
+    # Build the agent card asynchronously
+    agent_card = await card_builder.build()
 
-        # Create the A2A Starlette application
-        a2a_app = A2AStarletteApplication(
-            agent_card=agent_card,
-            http_handler=request_handler,
-        )
-
-        # Add A2A routes to the main app
-        a2a_app.add_routes_to_app(
-            app,
-        )
-        yield
+    # Create the A2A Starlette application
+    a2a_app = A2AStarletteApplication(
+        agent_card=agent_card,
+        http_handler=request_handler,
+    )
 
     # Create a Starlette app that will be configured during startup
-    starlette_app = Starlette(lifespan=lifespan)
+    starlette_app = Starlette()
+
+    # Add A2A routes to the main app
+    a2a_app.add_routes_to_app(
+        starlette_app,
+    )
 
     # Instrument the Starlette app with OpenTelemetry
     StarletteInstrumentor().instrument_app(starlette_app)
