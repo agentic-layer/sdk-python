@@ -24,8 +24,5 @@ jobs:
         with:
           python-version-file: "pyproject.toml"
 
-      - name: Install Dependencies
-        run: uv sync --all-packages
-
       - name: Run checks
         run: make check
