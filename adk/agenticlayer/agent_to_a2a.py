@@ -78,9 +78,8 @@ async def to_a2a(agent: BaseAgent) -> Starlette:
     # At this point, we don't know the applications port and the host is unknown when running in k8s or similar
     # A2A_AGENT_CARD_URL is deprecated but still supported for backwards compatibility
     agent_card_url = os.environ.get("AGENT_A2A_RPC_URL", os.environ.get("A2A_AGENT_CARD_URL", None))
-    logger.debug(f"Using agent card url: {agent_card_url}")
+    logger.debug("Using agent card url: %s", agent_card_url)
 
-    logger.debug("Setting up A2A app")
     # Build agent card
     card_builder = AgentCardBuilder(
         agent=agent,
