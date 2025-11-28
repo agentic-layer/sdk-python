@@ -27,19 +27,21 @@ class HealthCheckFilter(logging.Filter):
         return record.getMessage().find(AGENT_CARD_WELL_KNOWN_PATH) == -1
 
 
-async def to_a2a(agent: BaseAgent) -> Starlette:
+async def to_a2a(agent: BaseAgent, rpc_url: str) -> Starlette:
     """Convert an ADK agent to a A2A Starlette application.
     This is an adaption of google.adk.a2a.utils.agent_to_a2a.
 
     Args:
         agent: The ADK agent to convert
+        rpc_url: The URL where the agent will be available for A2A communication
 
     Returns:
         A Starlette application that can be run with uvicorn
 
     Example:
         agent = MyAgent()
-        app = to_a2a(agent)
+        rpc_url = "http://localhost:8000/"
+        app = asyncio.run(to_a2a(root_agent, rpc_url))
         # Then run with: uvicorn module:app
     """
     # Set up ADK logging to ensure logs are visible when using uvicorn directly
@@ -74,19 +76,15 @@ async def to_a2a(agent: BaseAgent) -> Starlette:
 
     request_handler = DefaultRequestHandler(agent_executor=agent_executor, task_store=task_store)
 
-    # Get the agent card URL from environment variable *only*
-    # At this point, we don't know the applications port and the host is unknown when running in k8s or similar
-    agent_card_url = os.environ.get("AGENT_A2A_RPC_URL", None)
-    logger.info("Using agent card url: %s", agent_card_url)
-
     # Build agent card
+    logger.info("Building agent card using rpc_url: %s", rpc_url)
     card_builder = AgentCardBuilder(
         agent=agent,
-        rpc_url=agent_card_url,
+        rpc_url=rpc_url,
     )
     # Build the agent card asynchronously
     agent_card = await card_builder.build()
-    logger.debug("Built agent card: %s", agent_card)
+    logger.debug("Built agent card: %s", agent_card.model_dump_json())
 
     # Create the A2A Starlette application
     a2a_app = A2AStarletteApplication(
