@@ -9,9 +9,9 @@ import os
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
+from a2a.types import AgentCapabilities, AgentCard
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
-from google.adk.a2a.utils.agent_card_builder import AgentCardBuilder
 from google.adk.agents.base_agent import BaseAgent
 from google.adk.apps.app import App
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
@@ -32,7 +32,7 @@ class HealthCheckFilter(logging.Filter):
         return record.getMessage().find(AGENT_CARD_WELL_KNOWN_PATH) == -1
 
 
-async def to_a2a(agent: BaseAgent, rpc_url: str) -> Starlette:
+def to_a2a(agent: BaseAgent, rpc_url: str) -> Starlette:
     """Convert an ADK agent to a A2A Starlette application.
     This is an adaption of google.adk.a2a.utils.agent_to_a2a.
 
@@ -46,7 +46,7 @@ async def to_a2a(agent: BaseAgent, rpc_url: str) -> Starlette:
     Example:
         agent = MyAgent()
         rpc_url = "http://localhost:8000/"
-        app = asyncio.run(to_a2a(root_agent, rpc_url))
+        app = to_a2a(root_agent, rpc_url)
         # Then run with: uvicorn module:app
     """
     # Set up ADK logging to ensure logs are visible when using uvicorn directly
@@ -82,14 +82,18 @@ async def to_a2a(agent: BaseAgent, rpc_url: str) -> Starlette:
     request_handler = DefaultRequestHandler(agent_executor=agent_executor, task_store=task_store)
 
     # Build agent card
-    logger.info("Building agent card using rpc_url: %s", rpc_url)
-    card_builder = AgentCardBuilder(
-        agent=agent,
-        rpc_url=rpc_url,
+    agent_card = AgentCard(
+        name=agent.name,
+        description=agent.description,
+        url=rpc_url,
+        version="0.1.0",
+        capabilities=AgentCapabilities(),
+        skills=[],
+        default_input_modes=["text/plain"],
+        default_output_modes=["text/plain"],
+        supports_authenticated_extended_card=False,
     )
-    # Build the agent card asynchronously
-    agent_card = await card_builder.build()
-    logger.debug("Built agent card: %s", agent_card.model_dump_json())
+    logger.info("Built agent card: %s", agent_card.model_dump_json())
 
     # Create the A2A Starlette application
     a2a_app = A2AStarletteApplication(

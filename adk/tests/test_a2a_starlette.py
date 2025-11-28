@@ -78,7 +78,7 @@ class TestA2AStarlette:
 
         # Given:
         agent = create_agent()
-        app = await to_a2a(agent, rpc_url)
+        app = to_a2a(agent, rpc_url)
         client = TestClient(app)
 
         # When: Requesting the agent card endpoint
@@ -97,7 +97,7 @@ class TestA2AStarlette:
 
         # Given:
         agent = create_agent()
-        app = await to_a2a(agent, rpc_url)
+        app = to_a2a(agent, rpc_url)
         client = TestClient(app)
 
         # When: Sending an A2A RPC request
@@ -131,7 +131,7 @@ class TestA2AStarlette:
         assert len(agent.tools) == 1, "There should be 1 agent tool for tool_call interaction type"
 
         # When: Requesting the agent card endpoint
-        app = await to_a2a(agent, rpc_url)
+        app = to_a2a(agent, rpc_url)
         client = TestClient(app)
         response = client.get("/.well-known/agent-card.json")
 
