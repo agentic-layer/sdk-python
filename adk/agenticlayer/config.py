@@ -1,3 +1,8 @@
+"""
+Configuration parsing for sub-agents and tools.
+Parses JSON configurations to create RemoteA2aAgents, AgentTools and McpToolsets.
+"""
+
 import json
 import logging
 

@@ -1,3 +1,5 @@
+"""OpenTelemetry setup for a Google ADK Agent App."""
+
 import logging
 
 from openinference.instrumentation.google_adk import GoogleADKInstrumentor

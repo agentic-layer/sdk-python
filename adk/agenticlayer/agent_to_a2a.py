@@ -1,3 +1,8 @@
+"""
+Convert an ADK agent to an A2A Starlette application.
+This is an adaption of google.adk.a2a.utils.agent_to_a2a.
+"""
+
 import logging
 import os
 

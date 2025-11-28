@@ -1,3 +1,9 @@
+"""
+A custom plugin that traces agent, model, and tool callbacks using OpenTelemetry.
+This is an early draft, created in conjunction with the Observability Dashboard:
+https://github.com/agentic-layer/observability-dashboard
+"""
+
 import re
 from typing import Any, Dict, Optional
 
@@ -69,10 +75,10 @@ def _set_span_attributes_for_tool(span: Any, tool: BaseTool, args: Dict[str, Any
 
 
 class CallbackTracerPlugin(BasePlugin):
-    """A custom plugin class for the Observability Dashboard."""
+    """A custom ADK plugin that traces agent, model, and tool callbacks using OpenTelemetry."""
 
     def __init__(self) -> None:
-        super().__init__("AdkCallbackTracerPlugin")
+        super().__init__("CallbackTracerPlugin")
 
     async def before_agent_callback(
         self, *, agent: BaseAgent, callback_context: CallbackContext
