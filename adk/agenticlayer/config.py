@@ -50,7 +50,7 @@ def parse_sub_agents(sub_agents_config: str) -> tuple[list[BaseAgent], list[Tool
 def parse_tools(tools_config: str) -> list[ToolUnion]:
     """
     Get tools from JSON string.
-    Format: {"tool_name": {"url": "http://tool_url"}, ...}
+    Format: {"tool_name": {"url": "http://tool_url", "timeout": 30}, ...}
 
     :return: A list of McpToolset tools
     """
@@ -70,6 +70,7 @@ def parse_tools(tools_config: str) -> list[ToolUnion]:
             McpToolset(
                 connection_params=StreamableHTTPConnectionParams(
                     url=config["url"],
+                    timeout=config.get("timeout", 30),
                 ),
             )
         )
