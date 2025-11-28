@@ -4,7 +4,6 @@ This is an adaption of google.adk.a2a.utils.agent_to_a2a.
 """
 
 import logging
-import os
 
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -16,7 +15,6 @@ from google.adk.agents.base_agent import BaseAgent
 from google.adk.apps.app import App
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.auth.credential_service.in_memory_credential_service import InMemoryCredentialService
-from google.adk.cli.utils.logs import setup_adk_logger
 from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
@@ -24,6 +22,8 @@ from opentelemetry.instrumentation.starlette import StarletteInstrumentor
 from starlette.applications import Starlette
 
 from .callback_tracer_plugin import CallbackTracerPlugin
+
+logger = logging.getLogger("agenticlayer")
 
 
 class HealthCheckFilter(logging.Filter):
@@ -49,10 +49,6 @@ def to_a2a(agent: BaseAgent, rpc_url: str) -> Starlette:
         app = to_a2a(root_agent, rpc_url)
         # Then run with: uvicorn module:app
     """
-    # Set up ADK logging to ensure logs are visible when using uvicorn directly
-    log_level = os.environ.get("LOGLEVEL", "INFO")
-    setup_adk_logger(log_level)  # type: ignore
-    logger = logging.getLogger(__name__)
 
     # Filter out health check logs from uvicorn access logger
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
