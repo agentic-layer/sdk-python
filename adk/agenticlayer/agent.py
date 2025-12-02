@@ -2,64 +2,99 @@
 Convert Sub Agents and Tools into RemoteA2aAgents, AgentTools and McpToolsets.
 """
 
+import logging
+
+import httpx
+from a2a.client import A2ACardResolver
+from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from google.adk.agents import BaseAgent, LlmAgent
 from google.adk.agents.llm_agent import ToolUnion
 from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
 from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.mcp_tool import StreamableHTTPConnectionParams
 from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
+from httpx_retries import Retry, RetryTransport
 
 from agenticlayer.config import InteractionType, McpTool, SubAgent
 
-
-def load_agent(agent: LlmAgent, sub_agents: list[SubAgent], tools: list[McpTool]) -> LlmAgent:
-    agents, agent_tools = load_sub_agents(sub_agents)
-    mcp_tools = load_tools(tools)
-    all_tools: list[ToolUnion] = agent_tools + mcp_tools
-
-    agent.sub_agents += agents
-    agent.tools += all_tools
-    return agent
+logger = logging.getLogger(__name__)
 
 
-def load_sub_agents(sub_agents: list[SubAgent]) -> tuple[list[BaseAgent], list[ToolUnion]]:
-    """
-    Convert Sub Agents into RemoteA2aAgents and AgentTools.
+class AgentFactory:
+    def __init__(
+        self,
+        timeout: httpx.Timeout = httpx.Timeout(timeout=10),
+        retry: Retry = Retry(total=10, backoff_factor=0.5, max_backoff_wait=15),
+    ) -> None:
+        self.timeout = timeout
+        self.transport = RetryTransport(retry=retry)
 
-    :return: A tuple of:
-        - list of sub agents for transfer interaction type
-        - list of agent tools for tool_call interaction type
-    """
+    async def load_agent(self, agent: LlmAgent, sub_agents: list[SubAgent], tools: list[McpTool]) -> LlmAgent:
+        """
+        Load Sub Agents and Tools into the given agent.
 
-    agents: list[BaseAgent] = []
-    tools: list[ToolUnion] = []
-    for sub_agent in sub_agents:
-        agent_card = str(sub_agent.url)
-        agent = RemoteA2aAgent(name=sub_agent.name, agent_card=agent_card)
-        if sub_agent.interaction_type == InteractionType.TOOL_CALL:
-            tools.append(AgentTool(agent=agent))
-        else:
-            agents.append(agent)
+        :param agent: The root agent to load sub agents and tools into
+        :param sub_agents: The sub agents to load
+        :param tools: The tools to load
+        :return: The agent with loaded sub agents and tools
+        """
 
-    return agents, tools
+        agents, agent_tools = await self.load_sub_agents(sub_agents)
+        mcp_tools = self.load_tools(tools)
+        all_tools: list[ToolUnion] = agent_tools + mcp_tools
 
+        agent.sub_agents += agents
+        agent.tools += all_tools
+        return agent
 
-def load_tools(mcp_tools: list[McpTool]) -> list[ToolUnion]:
-    """
-    Convert Tools into McpToolsets.
+    async def load_sub_agents(self, sub_agents: list[SubAgent]) -> tuple[list[BaseAgent], list[ToolUnion]]:
+        """
+        Convert Sub Agents into RemoteA2aAgents and AgentTools.
 
-    :return: A list of McpToolset tools
-    """
+        :param sub_agents: The sub agents to load
+        :return: A tuple of:
+            - list of sub agents for transfer interaction type
+            - list of agent tools for tool_call interaction type
+        """
 
-    tools: list[ToolUnion] = []
-    for tool in mcp_tools:
-        tools.append(
-            McpToolset(
-                connection_params=StreamableHTTPConnectionParams(
-                    url=str(tool.url),
-                    timeout=tool.timeout,
-                ),
+        agents: list[BaseAgent] = []
+        tools: list[ToolUnion] = []
+        for sub_agent in sub_agents:
+            base_url = str(sub_agent.url).replace(AGENT_CARD_WELL_KNOWN_PATH, "")
+            async with httpx.AsyncClient(transport=self.transport, timeout=self.timeout) as client:
+                resolver = A2ACardResolver(
+                    httpx_client=client,
+                    base_url=base_url,
+                )
+                agent_card = await resolver.get_agent_card()
+            agent = RemoteA2aAgent(name=sub_agent.name, agent_card=agent_card)
+            # Set description from agent card, as this is currently done lazy on first RPC call to agent by ADK
+            agent.description = agent_card.description
+            if sub_agent.interaction_type == InteractionType.TOOL_CALL:
+                tools.append(AgentTool(agent=agent))
+            else:
+                agents.append(agent)
+
+        return agents, tools
+
+    def load_tools(self, mcp_tools: list[McpTool]) -> list[ToolUnion]:
+        """
+        Convert Tools into McpToolsets.
+
+        :param mcp_tools: The tools to load
+        :return: A list of McpToolset tools
+        """
+
+        tools: list[ToolUnion] = []
+        for tool in mcp_tools:
+            logger.info(f"Loading tool {tool.model_dump_json()}")
+            tools.append(
+                McpToolset(
+                    connection_params=StreamableHTTPConnectionParams(
+                        url=str(tool.url),
+                        timeout=tool.timeout,
+                    ),
+                )
             )
-        )
 
-    return tools
+        return tools
