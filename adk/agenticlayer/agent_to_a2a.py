@@ -3,8 +3,10 @@ Convert an ADK agent to an A2A Starlette application.
 This is an adaption of google.adk.a2a.utils.agent_to_a2a.
 """
 
+import contextlib
 import logging
 import os
+from typing import AsyncIterator
 
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -32,27 +34,15 @@ class HealthCheckFilter(logging.Filter):
         return record.getMessage().find(AGENT_CARD_WELL_KNOWN_PATH) == -1
 
 
-def to_a2a(agent: BaseAgent, rpc_url: str) -> Starlette:
-    """Convert an ADK agent to a A2A Starlette application.
-    This is an adaption of google.adk.a2a.utils.agent_to_a2a.
+async def create_a2a_app(agent: BaseAgent, rpc_url: str) -> A2AStarletteApplication:
+    """Create an A2A Starlette application from an ADK agent.
 
     Args:
         agent: The ADK agent to convert
         rpc_url: The URL where the agent will be available for A2A communication
-
     Returns:
-        A Starlette application that can be run with uvicorn
-
-    Example:
-        agent = MyAgent()
-        rpc_url = "http://localhost:8000/"
-        app = to_a2a(root_agent, rpc_url)
-        # Then run with: uvicorn module:app
+        An A2AStarletteApplication instance
     """
-
-    # Filter out health check logs from uvicorn access logger
-    uvicorn_access_logger = logging.getLogger("uvicorn.access")
-    uvicorn_access_logger.addFilter(HealthCheckFilter())
 
     async def create_runner() -> Runner:
         """Create a runner for the agent."""
@@ -92,18 +82,43 @@ def to_a2a(agent: BaseAgent, rpc_url: str) -> Starlette:
     logger.info("Built agent card: %s", agent_card.model_dump_json())
 
     # Create the A2A Starlette application
-    a2a_app = A2AStarletteApplication(
+    return A2AStarletteApplication(
         agent_card=agent_card,
         http_handler=request_handler,
     )
 
-    # Create a Starlette app that will be configured during startup
-    starlette_app = Starlette()
 
-    # Add A2A routes to the main app
-    a2a_app.add_routes_to_app(
-        starlette_app,
-    )
+def to_a2a(agent: BaseAgent, rpc_url: str) -> Starlette:
+    """Convert an ADK agent to a A2A Starlette application.
+    This is an adaption of google.adk.a2a.utils.agent_to_a2a.
+
+    Args:
+        agent: The ADK agent to convert
+        rpc_url: The URL where the agent will be available for A2A communication
+
+    Returns:
+        A Starlette application that can be run with uvicorn
+
+    Example:
+        agent = MyAgent()
+        rpc_url = "http://localhost:8000/"
+        app = to_a2a(root_agent, rpc_url)
+        # Then run with: uvicorn module:app
+    """
+
+    # Filter out health check logs from uvicorn access logger
+    uvicorn_access_logger = logging.getLogger("uvicorn.access")
+    uvicorn_access_logger.addFilter(HealthCheckFilter())
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app: Starlette) -> AsyncIterator[None]:
+        a2a_app = await create_a2a_app(agent, rpc_url)
+        # Add A2A routes to the main app
+        a2a_app.add_routes_to_app(app)
+        yield
+
+    # Create a Starlette app that will be configured during startup
+    starlette_app = Starlette(lifespan=lifespan)
 
     # Instrument the Starlette app with OpenTelemetry
     # env needs to be set here since _excluded_urls is initialized at module import time
