@@ -4,6 +4,7 @@ This is an adaption of google.adk.a2a.utils.agent_to_a2a.
 """
 
 import logging
+import os
 
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -18,7 +19,6 @@ from google.adk.auth.credential_service.in_memory_credential_service import InMe
 from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
-from opentelemetry.instrumentation.starlette import StarletteInstrumentor
 from starlette.applications import Starlette
 
 from .callback_tracer_plugin import CallbackTracerPlugin
@@ -106,6 +106,10 @@ def to_a2a(agent: BaseAgent, rpc_url: str) -> Starlette:
     )
 
     # Instrument the Starlette app with OpenTelemetry
+    # env needs to be set here since _excluded_urls is initialized at module import time
+    os.environ.setdefault("OTEL_PYTHON_STARLETTE_EXCLUDED_URLS", AGENT_CARD_WELL_KNOWN_PATH)
+    from opentelemetry.instrumentation.starlette import StarletteInstrumentor
+
     StarletteInstrumentor().instrument_app(starlette_app)
 
     return starlette_app
