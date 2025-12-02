@@ -13,10 +13,11 @@ test: build
 
 
 .PHONY: check
-check: build test
-	uv run mypy .
+check: build
 	uv run ruff check
+	uv run mypy .
 	uv run bandit -c pyproject.toml -r .
+	make test
 
 
 .PHONY: check-fix
