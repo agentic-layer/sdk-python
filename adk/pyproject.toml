@@ -10,6 +10,7 @@ dependencies = [
     "opentelemetry-instrumentation-starlette",
     "openinference-instrumentation-google-adk",
     "opentelemetry-instrumentation-httpx",
+    "httpx-retries>=0.4.5",
 ]
 
 [build-system]

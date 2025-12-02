@@ -6,7 +6,7 @@ This is an adaption of google.adk.a2a.utils.agent_to_a2a.
 import contextlib
 import logging
 import os
-from typing import AsyncIterator
+from typing import AsyncIterator, Awaitable, Callable
 
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -14,6 +14,7 @@ from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
+from google.adk.agents import LlmAgent
 from google.adk.agents.base_agent import BaseAgent
 from google.adk.apps.app import App
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
@@ -23,9 +24,11 @@ from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from starlette.applications import Starlette
 
+from .agent import AgentFactory
 from .callback_tracer_plugin import CallbackTracerPlugin
+from .config import McpTool, SubAgent
 
-logger = logging.getLogger("agenticlayer")
+logger = logging.getLogger(__name__)
 
 
 class HealthCheckFilter(logging.Filter):
@@ -88,13 +91,22 @@ async def create_a2a_app(agent: BaseAgent, rpc_url: str) -> A2AStarletteApplicat
     )
 
 
-def to_a2a(agent: BaseAgent, rpc_url: str) -> Starlette:
-    """Convert an ADK agent to a A2A Starlette application.
-    This is an adaption of google.adk.a2a.utils.agent_to_a2a.
+def to_a2a(
+    agent: LlmAgent,
+    rpc_url: str,
+    sub_agents: list[SubAgent] | None = None,
+    tools: list[McpTool] | None = None,
+    agent_factory: AgentFactory | None = None,
+) -> Starlette:
+    """Convert an ADK agent to a Starlette application.
+    Resolves sub-agents and tools while starting the application.
 
     Args:
-        agent: The ADK agent to convert
-        rpc_url: The URL where the agent will be available for A2A communication
+        :param agent: The ADK agent to convert
+        :param rpc_url: The URL where the agent will be available for A2A communication
+        :param sub_agents: The sub agents to add to the agent
+        :param tools: The tools to add to the agent
+        :param agent_factory: Agent factory to use for loading sub-agents and tools
 
     Returns:
         A Starlette application that can be run with uvicorn
@@ -106,13 +118,37 @@ def to_a2a(agent: BaseAgent, rpc_url: str) -> Starlette:
         # Then run with: uvicorn module:app
     """
 
+    agent_factory = agent_factory or AgentFactory()
+
+    async def a2a_app_creator() -> A2AStarletteApplication:
+        configured_agent = await agent_factory.load_agent(
+            agent=agent,
+            sub_agents=sub_agents or [],
+            tools=tools or [],
+        )
+        return await create_a2a_app(configured_agent, rpc_url)
+
+    return to_starlette(a2a_app_creator)
+
+
+def to_starlette(a2a_starlette: Callable[[], Awaitable[A2AStarletteApplication]]) -> Starlette:
+    """Convert an ADK agent to a A2A Starlette application.
+    This is inspired by google.adk.a2a.utils.agent_to_a2a.
+
+    Args:
+        :param a2a_starlette: A callable that creates an A2AStarletteApplication asynchronously during startup.
+
+    Returns:
+        A Starlette application that can be run with uvicorn
+    """
+
     # Filter out health check logs from uvicorn access logger
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
     uvicorn_access_logger.addFilter(HealthCheckFilter())
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
-        a2a_app = await create_a2a_app(agent, rpc_url)
+        a2a_app = await a2a_starlette()
         # Add A2A routes to the main app
         a2a_app.add_routes_to_app(app)
         yield

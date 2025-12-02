@@ -3,14 +3,19 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
+import httpx
 import pytest
 import pytest_asyncio
-from agenticlayer.agent import load_agent
+import respx
+from a2a.client.errors import A2AClientHTTPError
+from agenticlayer.agent import AgentFactory
 from agenticlayer.agent_to_a2a import to_a2a
 from agenticlayer.config import InteractionType, McpTool, SubAgent
 from asgi_lifespan import LifespanManager
 from google.adk.agents.llm_agent import LlmAgent
 from google.adk.models.lite_llm import LiteLlm
+from httpx import Response
+from httpx_retries import Retry
 from pydantic import AnyHttpUrl
 from starlette.testclient import TestClient
 
@@ -58,30 +63,31 @@ def create_send_message_request(
 
 def create_agent(
     name: str = "test_agent",
-    sub_agents: list[SubAgent] | None = None,
-    tools: list[McpTool] | None = None,
 ) -> LlmAgent:
-    agent = LlmAgent(
+    return LlmAgent(
         name=name,
         model=LiteLlm(model="gemini/gemini-2.5-flash"),
         description="Test agent",
         instruction="You are a test agent.",
     )
-    return load_agent(
-        agent=agent,
-        sub_agents=sub_agents or [],
-        tools=tools or [],
-    )
-
-
-rpc_url = "http://localhost:80/"
 
 
 @pytest_asyncio.fixture
 def app_factory() -> Any:
     @contextlib.asynccontextmanager
-    async def _create_app(agent: LlmAgent) -> AsyncIterator[Any]:
-        app = to_a2a(agent, rpc_url)
+    async def _create_app(
+        agent: LlmAgent,
+        sub_agents: list[SubAgent] | None = None,
+        tools: list[McpTool] | None = None,
+    ) -> AsyncIterator[Any]:
+        rpc_url = "http://localhost:80/"
+        app = to_a2a(
+            agent=agent,
+            rpc_url=rpc_url,
+            sub_agents=sub_agents,
+            tools=tools,
+            agent_factory=AgentFactory(retry=Retry(total=2)),
+        )
         async with LifespanManager(app) as manager:
             yield manager.app
 
@@ -126,9 +132,30 @@ class TestA2AStarlette:
             assert rpc_data.get("jsonrpc") == "2.0"
             assert rpc_data.get("id") == 1
 
+    @respx.mock
     @pytest.mark.asyncio
     async def test_sub_agents(self, app_factory: Any) -> None:
         """Test that sub-agents are integrated correctly."""
+
+        # Given: Mock sub-agent agent card response
+        route_sub_agent_1 = respx.get("http://sub-agent-1.local/.well-known/agent-card.json").mock(
+            return_value=Response(
+                status_code=200,
+                json=create_mock_agent_card(
+                    agent_name="sub-agent-1",
+                    base_url="http://sub-agent-1.local",
+                ),
+            )
+        )
+        route_sub_agent_2 = respx.get("http://sub-agent-2.local/.well-known/agent-card.json").mock(
+            return_value=Response(
+                status_code=200,
+                json=create_mock_agent_card(
+                    agent_name="sub-agent-2",
+                    base_url="http://sub-agent-2.local",
+                ),
+            )
+        )
 
         # When: Creating an agent with sub-agents
         sub_agents = [
@@ -143,22 +170,51 @@ class TestA2AStarlette:
                 interaction_type=InteractionType.TOOL_CALL,
             ),
         ]
-        agent = create_agent(sub_agents=sub_agents)
-
-        # Then: Verify sub-agents and tools are integrated correctly
-        assert len(agent.sub_agents) == 1, "There should be 1 sub-agent for transfer interaction type"
-        assert len(agent.tools) == 1, "There should be 1 agent tool for tool_call interaction type"
+        agent = create_agent()
 
         # When: Requesting the agent card endpoint
-        async with app_factory(agent) as app:
+        async with app_factory(agent=agent, sub_agents=sub_agents) as app:
             client = TestClient(app)
             response = client.get("/.well-known/agent-card.json")
 
             # Then: Agent card is returned
             assert response.status_code == 200
 
+        # And: Sub-agent agent card endpoints were called
+        assert route_sub_agent_1.called, "Sub-agent 1 agent card endpoint was not called"
+        assert route_sub_agent_2.called, "Sub-agent 2 agent card endpoint was not called"
+
+    @respx.mock
     @pytest.mark.asyncio
-    async def test_tools(self) -> None:
+    async def test_sub_agent_unavailable_fails_startup(self, app_factory: Any) -> None:
+        """Test that unavailable sub-agents cause app startup to fail with retries."""
+
+        # Given: Mock sub-agent that returns connection errors
+        route_unavailable = respx.get("http://unavailable-agent.local/.well-known/agent-card.json").mock(
+            side_effect=httpx.ConnectError("Connection failed")
+        )
+        agent = create_agent()
+
+        sub_agents = [
+            SubAgent(
+                name="unavailable_agent",
+                url=AnyHttpUrl("http://unavailable-agent.local/.well-known/agent-card.json"),
+                interaction_type=InteractionType.TRANSFER,
+            ),
+        ]
+
+        # Expect: App creation should fail with A2AClientHTTPError
+        with pytest.raises(A2AClientHTTPError, match="Network communication error"):
+            async with app_factory(agent=agent, sub_agents=sub_agents):
+                pass
+
+        # And: The retry mechanism should have been used (total=2 means initial + 2 retries = 3 calls)
+        assert route_unavailable.call_count == 3, (
+            f"Expected 3 calls (1 initial + 2 retries), got {route_unavailable.call_count}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_tools(self, app_factory: Any) -> None:
         """Test that tools are integrated correctly."""
 
         # When: Creating an agent with tools
@@ -166,9 +222,12 @@ class TestA2AStarlette:
             McpTool(name="tool_1", url=AnyHttpUrl("http://tool-1.local/mcp")),
             McpTool(name="tool_2", url=AnyHttpUrl("http://tool-2.local/mcp")),
         ]
-        agent = create_agent(tools=tools)
+        agent = create_agent()
 
-        # Then: Verify McpToolsets are created and integrated correctly
-        assert len(agent.tools) == 2, "There should be 2 McpToolset tools"
+        # When: Requesting the agent card endpoint
+        async with app_factory(agent=agent, tools=tools) as app:
+            client = TestClient(app)
+            response = client.get("/.well-known/agent-card.json")
 
-        # Note: Further integration tests would require mocking MCP tool behavior
+            # Then: Agent card is returned
+            assert response.status_code == 200
