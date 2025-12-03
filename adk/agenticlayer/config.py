@@ -45,7 +45,7 @@ def parse_sub_agents(sub_agents_config: str) -> list[SubAgent]:
         SubAgent(
             name=agent_name,
             url=config["url"],
-            interaction_type=InteractionType(config.get("interaction_type")),
+            interaction_type=InteractionType(config.get("interaction_type", "tool_call")),
         )
         for agent_name, config in agents_map.items()
     ]

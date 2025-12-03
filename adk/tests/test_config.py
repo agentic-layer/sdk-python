@@ -16,6 +16,9 @@ class TestParseSubAgents:
             "sub_agent_2": {
                 "url": "http://sub-agent-2.local/.well-known/agent-card.json",
                 "interaction_type": "tool_call"
+            },
+            "sub_agent_3": {
+                "url": "http://sub-agent-3.local/.well-known/agent-card.json"
             }
         }"""
 
@@ -23,7 +26,7 @@ class TestParseSubAgents:
         sub_agents = parse_sub_agents(config)
 
         # Then: Both sub-agents are parsed correctly
-        assert len(sub_agents) == 2
+        assert len(sub_agents) == 3
 
         transfer_agent = next(a for a in sub_agents if a.name == "sub_agent_1")
         assert str(transfer_agent.url) == "http://sub-agent-1.local/.well-known/agent-card.json"
@@ -31,6 +34,10 @@ class TestParseSubAgents:
 
         tool_call_agent = next(a for a in sub_agents if a.name == "sub_agent_2")
         assert str(tool_call_agent.url) == "http://sub-agent-2.local/.well-known/agent-card.json"
+        assert tool_call_agent.interaction_type == InteractionType.TOOL_CALL
+
+        tool_call_agent = next(a for a in sub_agents if a.name == "sub_agent_3")
+        assert str(tool_call_agent.url) == "http://sub-agent-3.local/.well-known/agent-card.json"
         assert tool_call_agent.interaction_type == InteractionType.TOOL_CALL
 
     def test_parse_sub_agents_empty_config(self) -> None:
