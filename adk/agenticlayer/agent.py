@@ -43,11 +43,21 @@ class AgentFactory:
         mcp_tools = self.load_tools(tools)
         all_tools: list[ToolUnion] = agent_tools + mcp_tools
 
+        # The ADK currently only adds the agent as a function with the agent name to the instructions.
+        # The description is not included. So we manually add the descriptions here.
+        if agent_tools:
+            agent_tool_instructions = "\n\nFollowing agents are available as tools:\n"
+            agent_tool_instructions += "\n".join(
+                [f"- '{agent_tool.name}': {agent_tool.description}" for agent_tool in agent_tools]
+            )
+            agent_tool_instructions += "\nYou can use them by calling the tool with the agent name.\n"
+            agent.instruction = f"{agent.instruction}{agent_tool_instructions}"
+
         agent.sub_agents += agents
         agent.tools += all_tools
         return agent
 
-    async def load_sub_agents(self, sub_agents: list[SubAgent]) -> tuple[list[BaseAgent], list[ToolUnion]]:
+    async def load_sub_agents(self, sub_agents: list[SubAgent]) -> tuple[list[BaseAgent], list[AgentTool]]:
         """
         Convert Sub Agents into RemoteA2aAgents and AgentTools.
 
@@ -58,7 +68,7 @@ class AgentFactory:
         """
 
         agents: list[BaseAgent] = []
-        tools: list[ToolUnion] = []
+        tools: list[AgentTool] = []
         for sub_agent in sub_agents:
             base_url = str(sub_agent.url).replace(AGENT_CARD_WELL_KNOWN_PATH, "")
             async with httpx.AsyncClient(transport=self.transport, timeout=self.timeout) as client:
