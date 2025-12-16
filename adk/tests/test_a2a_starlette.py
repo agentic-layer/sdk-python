@@ -238,7 +238,7 @@ class TestA2AStarlette:
         ]
 
         # And: Mock McpToolset.get_tools to return our mock tools
-        async def mock_get_tools(self, readonly_context=None):
+        async def mock_get_tools(self: Any, readonly_context: Any = None) -> list[Any]:
             return mock_tools
 
         monkeypatch.setattr("google.adk.tools.mcp_tool.mcp_toolset.McpToolset.get_tools", mock_get_tools)
@@ -249,7 +249,8 @@ class TestA2AStarlette:
 
         # When: Creating app with MCP tool
         async with app_factory(agent=agent, tools=tools) as _:
-            # Then: All three tools should appear in instructions
+            # Then: Instruction should be a string with all three tools
+            assert isinstance(agent.instruction, str), "Agent instruction should be a string"
             assert "- 'get_customer': Retrieves customer information" in agent.instruction
             assert "- 'update_customer': Updates customer records" in agent.instruction
             assert "- 'delete_customer': Deletes customer from database" in agent.instruction
@@ -262,7 +263,7 @@ class TestA2AStarlette:
         """Test that unavailable MCP server causes app startup to fail with ConnectionError."""
 
         # Given: Mock McpToolset.get_tools to raise an exception
-        async def mock_get_tools_error(self, readonly_context=None):
+        async def mock_get_tools_error(self: Any, readonly_context: Any = None) -> Any:
             raise ConnectionError("Connection refused")
 
         monkeypatch.setattr("google.adk.tools.mcp_tool.mcp_toolset.McpToolset.get_tools", mock_get_tools_error)
