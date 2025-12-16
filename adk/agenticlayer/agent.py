@@ -100,8 +100,19 @@ class AgentFactory:
         """
         Convert Tools into McpToolsets and extract their descriptions.
 
-        This method creates McpToolset instances for runtime use and simultaneously
-        introspects them to extract tool descriptions.
+        This method creates McpToolset instances for runtime use and introspects
+        MCP servers using temporary connections to extract tool descriptions.
+
+        We use TWO separate McpToolset instances per MCP server:
+        1. Temporary instance for introspection - created, used to get tool schemas, then closed
+        2. Runtime instance - long-lived, kept in agent's tool list for execution
+
+        Why separate instances are necessary:
+        - McpToolset internally uses anyio.create_task_group() for async connection management
+        - When get_tools() is called during Starlette's lifespan startup, these task groups
+          conflict with Starlette's own async context management
+        - Closing the introspection instance ensures all internal task groups are properly
+          cleaned up before the runtime instance is created
 
         :param mcp_tools: The tools to load
         :return: Tuple of (toolsets for runtime, tool descriptions for instructions)
@@ -114,18 +125,21 @@ class AgentFactory:
         for mcp_tool in mcp_tools:
             logger.info(f"Loading tool {mcp_tool.model_dump_json()}")
 
-            try:
-                # Create McpToolset for runtime use
-                toolset = McpToolset(
-                    connection_params=StreamableHTTPConnectionParams(
-                        url=str(mcp_tool.url),
-                        timeout=mcp_tool.timeout,
-                    ),
-                )
+            # Create connection params (reused for both introspection and runtime)
+            connection_params = StreamableHTTPConnectionParams(
+                url=str(mcp_tool.url),
+                timeout=mcp_tool.timeout,
+            )
 
+            # PHASE 1: Introspection using temporary toolset
+            # Create a temporary toolset just for introspection to avoid async context conflicts
+            introspection_toolset = McpToolset(connection_params=connection_params)
+
+            try:
                 # Introspect the MCP server to get tool schemas with descriptions
                 # This queries the MCP server's tools/list endpoint
-                tools = await toolset.get_tools()
+                logger.debug(f"Introspecting MCP server at {mcp_tool.url}")
+                tools = await introspection_toolset.get_tools()
 
                 # Extract (name, description) for each tool
                 for tool in tools:
@@ -136,14 +150,34 @@ class AgentFactory:
                     else:
                         logger.warning(f"Tool '{name}' from {mcp_tool.name} has no description")
 
-                # Add toolset to runtime list (keep it alive for agent execution)
-                toolsets.append(toolset)
-
             except Exception as e:
                 logger.error(f"Failed to load MCP tool from {mcp_tool.url}: {e}")
+                # Attempt cleanup before raising
+                try:
+                    await introspection_toolset.close()
+                except Exception as cleanup_error:
+                    logger.warning(f"Error during introspection toolset cleanup for {mcp_tool.name}: {cleanup_error}")
+
                 raise ConnectionError(
                     f"Could not connect to MCP server '{mcp_tool.name}' at {mcp_tool.url}. "
                     f"Ensure the server is running and accessible."
                 ) from e
+
+            finally:
+                # ALWAYS close the introspection toolset to clean up async task groups
+                try:
+                    logger.debug(f"Closing introspection connection to {mcp_tool.url}")
+                    await introspection_toolset.close()
+                except Exception as cleanup_error:
+                    # Log but don't raise - cleanup failures shouldn't block startup
+                    logger.warning(f"Error closing introspection toolset for {mcp_tool.name}: {cleanup_error}")
+
+            # PHASE 2: Create separate runtime toolset
+            # This toolset will be kept alive for the lifetime of the agent
+            logger.debug(f"Creating runtime toolset for {mcp_tool.url}")
+            runtime_toolset = McpToolset(connection_params=connection_params)
+
+            # Add runtime toolset to the list (keep it alive for agent execution)
+            toolsets.append(runtime_toolset)
 
         return toolsets, tool_descriptions
