@@ -40,7 +40,7 @@ class AgentFactory:
         """
 
         agents, agent_tools = await self.load_sub_agents(sub_agents)
-        mcp_tools = self.load_tools(tools)
+        mcp_tools, mcp_tool_descriptions = await self.load_tools(tools)
         all_tools: list[ToolUnion] = agent_tools + mcp_tools
 
         # The ADK currently only adds the agent as a function with the agent name to the instructions.
@@ -52,6 +52,15 @@ class AgentFactory:
             )
             agent_tool_instructions += "\nYou can use them by calling the tool with the agent name.\n"
             agent.instruction = f"{agent.instruction}{agent_tool_instructions}"
+
+        # Add MCP tool descriptions to instructions
+        if mcp_tool_descriptions:
+            mcp_tool_instructions = "\n\nFollowing MCP tools are available:\n"
+            mcp_tool_instructions += "\n".join(
+                [f"- '{name}': {description}" for name, description in mcp_tool_descriptions]
+            )
+            mcp_tool_instructions += "\nYou can use them by calling the tool with the tool name.\n"
+            agent.instruction = f"{agent.instruction}{mcp_tool_instructions}"
 
         agent.sub_agents += agents
         agent.tools += all_tools
@@ -87,24 +96,54 @@ class AgentFactory:
 
         return agents, tools
 
-    def load_tools(self, mcp_tools: list[McpTool]) -> list[ToolUnion]:
+    async def load_tools(self, mcp_tools: list[McpTool]) -> tuple[list[ToolUnion], list[tuple[str, str]]]:
         """
-        Convert Tools into McpToolsets.
+        Convert Tools into McpToolsets and extract their descriptions.
+
+        This method creates McpToolset instances for runtime use and simultaneously
+        introspects them to extract tool descriptions.
 
         :param mcp_tools: The tools to load
-        :return: A list of McpToolset tools
+        :return: Tuple of (toolsets for runtime, tool descriptions for instructions)
+        :raises ConnectionError: If any MCP server is unavailable or unreachable
         """
 
-        tools: list[ToolUnion] = []
-        for tool in mcp_tools:
-            logger.info(f"Loading tool {tool.model_dump_json()}")
-            tools.append(
-                McpToolset(
+        toolsets: list[ToolUnion] = []
+        tool_descriptions: list[tuple[str, str]] = []
+
+        for mcp_tool in mcp_tools:
+            logger.info(f"Loading tool {mcp_tool.model_dump_json()}")
+
+            try:
+                # Create McpToolset for runtime use
+                toolset = McpToolset(
                     connection_params=StreamableHTTPConnectionParams(
-                        url=str(tool.url),
-                        timeout=tool.timeout,
+                        url=str(mcp_tool.url),
+                        timeout=mcp_tool.timeout,
                     ),
                 )
-            )
 
-        return tools
+                # Introspect the MCP server to get tool schemas with descriptions
+                # This queries the MCP server's tools/list endpoint
+                tools = await toolset.get_tools()
+
+                # Extract (name, description) for each tool
+                for tool in tools:
+                    name = tool.name
+                    description = tool.description
+                    if description:  # Only include tools with descriptions
+                        tool_descriptions.append((name, description))
+                    else:
+                        logger.warning(f"Tool '{name}' from {mcp_tool.name} has no description")
+
+                # Add toolset to runtime list (keep it alive for agent execution)
+                toolsets.append(toolset)
+
+            except Exception as e:
+                logger.error(f"Failed to load MCP tool from {mcp_tool.url}: {e}")
+                raise ConnectionError(
+                    f"Could not connect to MCP server '{mcp_tool.name}' at {mcp_tool.url}. "
+                    f"Ensure the server is running and accessible."
+                ) from e
+
+        return toolsets, tool_descriptions
