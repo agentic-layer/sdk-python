@@ -27,7 +27,7 @@ from agenticlayer.otel import setup_otel
 from google.adk.agents import LlmAgent
 
 # Set up OpenTelemetry instrumentation, logging and metrics
-setup_otel()
+setup_otel(capture_http_bodies=True)
 
 # Parse sub agents and tools from JSON configuration
 sub_agent, agent_tools = parse_sub_agents("{}")
@@ -81,3 +81,22 @@ The JSON configuration for `AGENT_TOOLS` should follow this structure:
 The SDK automatically configures OpenTelemetry observability when running `setup_otel()`. You can customize the OTLP
 exporters using standard OpenTelemetry environment variables:
 https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/
+
+### HTTP Body Logging
+
+By default, HTTP request/response bodies are not captured in traces for security and privacy reasons. To enable body
+logging for debugging purposes, pass `enable_body_logging=True` to `setup_otel()`.
+
+When enabled, body logging applies to both:
+- **HTTPX client requests/responses** (outgoing HTTP calls)
+- **Starlette server requests/responses** (incoming HTTP requests to your app)
+
+Body logging behavior:
+- Only text-based content types are logged (JSON, XML, plain text, form data)
+- Bodies are truncated to 100KB to prevent memory issues
+- Binary content (images, PDFs, etc.) is never logged
+- Streaming requests/responses are skipped to avoid consuming streams
+- All exceptions during body capture are logged but won't break HTTP requests
+
+**Note**: Starlette body logging is more limited than HTTPX because it must avoid consuming request/response streams.
+Bodies are only captured when already buffered in the ASGI scope.

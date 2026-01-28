@@ -5,7 +5,6 @@ This is an adaption of google.adk.a2a.utils.agent_to_a2a.
 
 import contextlib
 import logging
-import os
 from typing import AsyncIterator, Awaitable, Callable
 
 from a2a.server.apps import A2AStarletteApplication
@@ -157,10 +156,8 @@ def to_starlette(a2a_starlette: Callable[[], Awaitable[A2AStarletteApplication]]
     starlette_app = Starlette(lifespan=lifespan)
 
     # Instrument the Starlette app with OpenTelemetry
-    # env needs to be set here since _excluded_urls is initialized at module import time
-    os.environ.setdefault("OTEL_PYTHON_STARLETTE_EXCLUDED_URLS", AGENT_CARD_WELL_KNOWN_PATH)
-    from opentelemetry.instrumentation.starlette import StarletteInstrumentor
+    from .otel_starlette import instrument_starlette_app
 
-    StarletteInstrumentor().instrument_app(starlette_app)
+    instrument_starlette_app(starlette_app)
 
     return starlette_app
