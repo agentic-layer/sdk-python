@@ -72,6 +72,19 @@ def create_agent(
     )
 
 
+def create_mcp_tool_config(
+    name: str = "test_mcp_tool",
+    url: str = "http://mcp-server.local/mcp",
+    timeout: int = 30,
+) -> McpTool:
+    """Helper function to create McpTool configuration object."""
+    return McpTool(
+        name=name,
+        url=AnyHttpUrl(url),
+        timeout=timeout,
+    )
+
+
 @pytest_asyncio.fixture
 def app_factory() -> Any:
     @contextlib.asynccontextmanager
@@ -214,20 +227,58 @@ class TestA2AStarlette:
         )
 
     @pytest.mark.asyncio
-    async def test_tools(self, app_factory: Any) -> None:
-        """Test that tools are integrated correctly."""
+    async def test_mcp_tool_multiple_from_single_server(self, app_factory: Any, monkeypatch: Any) -> None:
+        """Test that multiple tools from a single MCP server are all added to agent instructions."""
 
-        # When: Creating an agent with tools
-        tools = [
-            McpTool(name="tool_1", url=AnyHttpUrl("http://tool-1.local/mcp")),
-            McpTool(name="tool_2", url=AnyHttpUrl("http://tool-2.local/mcp")),
+        # Given: Mock tools with names and descriptions
+        mock_tools = [
+            type("MockTool", (), {"name": "get_customer", "description": "Retrieves customer information"})(),
+            type("MockTool", (), {"name": "update_customer", "description": "Updates customer records"})(),
+            type("MockTool", (), {"name": "delete_customer", "description": "Deletes customer from database"})(),
         ]
+
+        # And: Mock McpToolset.get_tools to return our mock tools
+        async def mock_get_tools(self: Any, readonly_context: Any = None) -> list[Any]:
+            return mock_tools
+
+        monkeypatch.setattr("google.adk.tools.mcp_tool.mcp_toolset.McpToolset.get_tools", mock_get_tools)
+
+        # And: Agent and MCP tool configuration
         agent = create_agent()
+        tools = [create_mcp_tool_config(name="customer_api", url="http://mcp-server.local/mcp")]
 
-        # When: Requesting the agent card endpoint
-        async with app_factory(agent=agent, tools=tools) as app:
-            client = TestClient(app)
-            response = client.get("/.well-known/agent-card.json")
+        # When: Creating app with MCP tool
+        async with app_factory(agent=agent, tools=tools) as _:
+            # Then: Instruction should be a string with all three tools
+            assert isinstance(agent.instruction, str), "Agent instruction should be a string"
+            assert "- 'get_customer': Retrieves customer information" in agent.instruction
+            assert "- 'update_customer': Updates customer records" in agent.instruction
+            assert "- 'delete_customer': Deletes customer from database" in agent.instruction
 
-            # Then: Agent card is returned
-            assert response.status_code == 200
+            # And: MCP tools section should be present
+            assert "\n\nFollowing MCP tools are available:\n" in agent.instruction
+
+    @pytest.mark.asyncio
+    async def test_mcp_tool_server_unavailable(self, app_factory: Any, monkeypatch: Any) -> None:
+        """Test that unavailable MCP server causes app startup to fail with ConnectionError."""
+
+        # Given: Mock McpToolset.get_tools to raise an exception
+        async def mock_get_tools_error(self: Any, readonly_context: Any = None) -> Any:
+            raise ConnectionError("Connection refused")
+
+        monkeypatch.setattr("google.adk.tools.mcp_tool.mcp_toolset.McpToolset.get_tools", mock_get_tools_error)
+
+        # And: Agent and MCP tool configuration
+        agent = create_agent()
+        tools = [create_mcp_tool_config(name="unavailable_tool", url="http://unreachable-mcp.local/mcp")]
+
+        # Expect: App creation should fail with ConnectionError containing tool name, URL, and helpful message
+        with pytest.raises(ConnectionError) as exc_info:
+            async with app_factory(agent=agent, tools=tools):
+                pass
+
+        # Then: Error message should contain expected details
+        error_message = str(exc_info.value)
+        assert "Could not connect to MCP server 'unavailable_tool'" in error_message
+        assert "http://unreachable-mcp.local/mcp" in error_message
+        assert "Ensure the server is running and accessible" in error_message
