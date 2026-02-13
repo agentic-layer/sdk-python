@@ -5,7 +5,7 @@ import contextlib
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
@@ -186,7 +186,7 @@ class TestTokenPassing:
 
             # When: Sending a request with X-External-Token header
             # We'll patch get_external_token to verify it was set
-            with patch("agenticlayer.token_context.get_external_token") as mock_get:
+            with patch("agenticlayer.token_context.get_external_token"):
                 # The token should be captured during request processing
                 # We need to check it was set by inspecting the context during the request
 
@@ -210,7 +210,6 @@ class TestTokenPassing:
         """Test that token is passed to MCP tool requests."""
         # Given: An agent with MCP tools
         agent = create_agent()
-        test_token = "mcp-api-token-xyz789"
 
         # Mock the MCP server SSE endpoint for tool discovery
         mcp_url = "http://mcp-tool.local/mcp"
