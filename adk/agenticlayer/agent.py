@@ -16,6 +16,7 @@ from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
 from httpx_retries import Retry, RetryTransport
 
 from agenticlayer.config import InteractionType, McpTool, SubAgent
+from agenticlayer.token_context import get_mcp_headers
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,10 @@ class AgentFactory:
                         url=str(tool.url),
                         timeout=tool.timeout,
                     ),
+                    # Pass a header provider that injects the X-External-Token header
+                    # The lambda is needed because header_provider expects a ReadonlyContext parameter,
+                    # but we don't use it since we get the token from contextvars
+                    header_provider=lambda _ctx: get_mcp_headers(),
                 )
             )
 
