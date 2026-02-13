@@ -57,11 +57,12 @@ class TokenCapturingCallContextBuilder(CallContextBuilder):
 
         # Build the standard context with headers and auth information
         # (following the pattern from DefaultCallContextBuilder)
-        from a2a.server.apps.jsonrpc import StarletteUserProxy, get_requested_extensions
-        from a2a.server.apps.jsonrpc import HTTP_EXTENSION_HEADER
-        from a2a.types import UnauthenticatedUser
+        from a2a.auth.user import UnauthenticatedUser
+        from a2a.auth.user import User as A2AUser
+        from a2a.extensions.common import HTTP_EXTENSION_HEADER, get_requested_extensions
+        from a2a.server.apps.jsonrpc import StarletteUserProxy
 
-        user = UnauthenticatedUser()
+        user: A2AUser = UnauthenticatedUser()
         state = {}
         try:
             user = StarletteUserProxy(request.user)
