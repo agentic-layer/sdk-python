@@ -5,7 +5,6 @@ inaccessible to the agent but available for MCP tool authentication.
 """
 
 from contextvars import ContextVar
-from typing import Dict
 
 # Context variable to store the external API token for the current request
 # This is stored separately from the session to ensure agents cannot access it
@@ -30,7 +29,7 @@ def get_external_token() -> str | None:
     return _external_token.get()
 
 
-def get_mcp_headers() -> Dict[str, str]:
+def get_mcp_headers() -> dict[str, str]:
     """Get headers to be passed to MCP tool calls.
 
     This function is intended to be used as a header_provider for McpToolset.

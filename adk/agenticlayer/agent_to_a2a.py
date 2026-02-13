@@ -5,10 +5,13 @@ This is an adaption of google.adk.a2a.utils.agent_to_a2a.
 
 import contextlib
 import logging
-from typing import AsyncIterator, Awaitable, Callable
+from typing import Any, AsyncIterator, Awaitable, Callable
 
+from a2a.auth.user import UnauthenticatedUser
+from a2a.auth.user import User as A2AUser
+from a2a.extensions.common import HTTP_EXTENSION_HEADER, get_requested_extensions
 from a2a.server.apps import A2AStarletteApplication
-from a2a.server.apps.jsonrpc import CallContextBuilder
+from a2a.server.apps.jsonrpc import CallContextBuilder, StarletteUserProxy
 from a2a.server.context import ServerCallContext
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
@@ -57,18 +60,15 @@ class TokenCapturingCallContextBuilder(CallContextBuilder):
 
         # Build the standard context with headers and auth information
         # (following the pattern from DefaultCallContextBuilder)
-        from a2a.auth.user import UnauthenticatedUser
-        from a2a.auth.user import User as A2AUser
-        from a2a.extensions.common import HTTP_EXTENSION_HEADER, get_requested_extensions
-        from a2a.server.apps.jsonrpc import StarletteUserProxy
-
         user: A2AUser = UnauthenticatedUser()
-        state = {}
+        state: dict[str, Any] = {}
         try:
             user = StarletteUserProxy(request.user)
             state["auth"] = request.auth
-        except Exception:
-            pass
+        except AttributeError as e:
+            # request.user or request.auth not available, which is expected
+            # when no authentication middleware is configured
+            logger.debug("Authentication not available in request: %s", e)
 
         state["headers"] = dict(request.headers)
 
