@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import json
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -232,7 +233,7 @@ class TestTokenPassing:
             return Response(
                 status_code=200,
                 headers={"content-type": "text/event-stream"},
-                text=f'event: message\ndata: {{"jsonrpc":"2.0","result":{str(tools_list_response).replace("'", '"')},"id":1}}\n\n',
+                text=f'event: message\ndata: {json.dumps({"jsonrpc": "2.0", "result": tools_list_response, "id": 1})}\n\n',
             )
 
         # Note: This test verifies the infrastructure is in place.
