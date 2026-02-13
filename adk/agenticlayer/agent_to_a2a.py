@@ -8,6 +8,8 @@ import logging
 from typing import AsyncIterator, Awaitable, Callable
 
 from a2a.server.apps import A2AStarletteApplication
+from a2a.server.apps.jsonrpc import CallContextBuilder
+from a2a.server.context import ServerCallContext
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard
@@ -22,12 +24,58 @@ from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from starlette.applications import Starlette
+from starlette.requests import Request
 
 from .agent import AgentFactory
 from .callback_tracer_plugin import CallbackTracerPlugin
 from .config import McpTool, SubAgent
+from .token_context import set_external_token
 
 logger = logging.getLogger(__name__)
+
+
+class TokenCapturingCallContextBuilder(CallContextBuilder):
+    """Custom CallContextBuilder that captures X-External-Token header and stores it in context.
+
+    This builder extracts the X-External-Token header from incoming requests and stores it
+    in a context variable for later use by MCP tools. The token is kept separate from the
+    session state to prevent agent access while still being available for tool authentication.
+    """
+
+    def build(self, request: Request) -> ServerCallContext:
+        """Build ServerCallContext and capture the X-External-Token header.
+
+        Args:
+            request: The incoming Starlette Request object
+
+        Returns:
+            A ServerCallContext with the token stored in context variables
+        """
+        # Extract and store the external token from the request headers
+        token = request.headers.get("X-External-Token")
+        set_external_token(token)
+
+        # Build the standard context with headers and auth information
+        # (following the pattern from DefaultCallContextBuilder)
+        from a2a.server.apps.jsonrpc import StarletteUserProxy, get_requested_extensions
+        from a2a.server.apps.jsonrpc import HTTP_EXTENSION_HEADER
+        from a2a.types import UnauthenticatedUser
+
+        user = UnauthenticatedUser()
+        state = {}
+        try:
+            user = StarletteUserProxy(request.user)
+            state["auth"] = request.auth
+        except Exception:
+            pass
+
+        state["headers"] = dict(request.headers)
+
+        return ServerCallContext(
+            user=user,
+            state=state,
+            requested_extensions=get_requested_extensions(request.headers.getlist(HTTP_EXTENSION_HEADER)),
+        )
 
 
 class HealthCheckFilter(logging.Filter):
@@ -87,6 +135,7 @@ async def create_a2a_app(agent: BaseAgent, rpc_url: str) -> A2AStarletteApplicat
     return A2AStarletteApplication(
         agent_card=agent_card,
         http_handler=request_handler,
+        context_builder=TokenCapturingCallContextBuilder(),
     )
 
 
