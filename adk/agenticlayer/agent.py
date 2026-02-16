@@ -7,6 +7,7 @@ import logging
 import httpx
 from a2a.client import A2ACardResolver
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
+from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.agents import BaseAgent, LlmAgent
 from google.adk.agents.llm_agent import ToolUnion
 from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 _EXTERNAL_TOKEN_SESSION_KEY = "__external_token__"
 
 
-def _get_mcp_headers_from_session(readonly_context) -> dict[str, str]:
+def _get_mcp_headers_from_session(readonly_context: ReadonlyContext) -> dict[str, str]:
     """Header provider function for MCP tools that retrieves token from ADK session.
 
     This function is called by the ADK when MCP tools are invoked. It reads the

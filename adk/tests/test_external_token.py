@@ -4,7 +4,6 @@ import uuid
 from typing import Any
 
 import pytest
-import pytest_asyncio
 from agenticlayer.agent import AgentFactory
 from agenticlayer.agent_to_a2a import _EXTERNAL_TOKEN_SESSION_KEY, to_a2a
 from agenticlayer.config import McpTool

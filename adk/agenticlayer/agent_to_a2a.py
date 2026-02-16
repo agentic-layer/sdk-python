@@ -13,8 +13,8 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
-from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
 from google.adk.a2a.converters.request_converter import AgentRunRequest
+from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
 from google.adk.agents import LlmAgent
 from google.adk.agents.base_agent import BaseAgent
 from google.adk.apps.app import App
@@ -23,6 +23,7 @@ from google.adk.auth.credential_service.in_memory_credential_service import InMe
 from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
+from google.adk.sessions.session import Session
 from starlette.applications import Starlette
 
 from .agent import AgentFactory
@@ -49,7 +50,7 @@ class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
         context: RequestContext,
         run_request: AgentRunRequest,
         runner: Runner,
-    ):
+    ) -> Session:
         """Prepare the session and store the external token if present.
 
         This method extends the parent implementation to capture the X-External-Token
@@ -64,7 +65,7 @@ class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
             The prepared session with the external token stored in its state
         """
         # Call parent to get or create the session
-        session = await super()._prepare_session(context, run_request, runner)
+        session: Session = await super()._prepare_session(context, run_request, runner)
 
         # Extract the X-External-Token header from the request context
         # The call_context.state contains headers from the original HTTP request
@@ -74,9 +75,8 @@ class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
             
             if external_token:
                 # Store the token in the session state with a private key
-                # Using update_session to persist the change
+                # The session state is mutable and changes are persisted automatically
                 session.state[_EXTERNAL_TOKEN_SESSION_KEY] = external_token
-                await runner.session_service.update_session(session)
                 logger.debug("Stored external token in session %s", session.id)
 
         return session
