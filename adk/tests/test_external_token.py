@@ -8,7 +8,7 @@ from google.adk.sessions.session import Session
 def test_header_provider_retrieves_token_from_session() -> None:
     """Test that the header provider function can retrieve token from session state."""
     # Given: A session with an external token stored
-    test_token = "test-api-token-xyz"
+    test_token = "test-api-token-xyz"  # nosec B105
     session = Session(
         id="test-session",
         app_name="test-app",
