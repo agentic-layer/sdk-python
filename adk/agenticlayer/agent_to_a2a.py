@@ -5,19 +5,16 @@ This is an adaption of google.adk.a2a.utils.agent_to_a2a.
 
 import contextlib
 import logging
-from typing import Any, AsyncIterator, Awaitable, Callable
+from typing import AsyncIterator, Awaitable, Callable
 
-from a2a.auth.user import UnauthenticatedUser
-from a2a.auth.user import User as A2AUser
-from a2a.extensions.common import HTTP_EXTENSION_HEADER, get_requested_extensions
+from a2a.server.agent_execution.context import RequestContext
 from a2a.server.apps import A2AStarletteApplication
-from a2a.server.apps.jsonrpc import CallContextBuilder, StarletteUserProxy
-from a2a.server.context import ServerCallContext
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
+from google.adk.a2a.converters.request_converter import AgentRunRequest
 from google.adk.agents import LlmAgent
 from google.adk.agents.base_agent import BaseAgent
 from google.adk.apps.app import App
@@ -27,56 +24,62 @@ from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from starlette.applications import Starlette
-from starlette.requests import Request
 
 from .agent import AgentFactory
 from .callback_tracer_plugin import CallbackTracerPlugin
 from .config import McpTool, SubAgent
-from .token_context import set_external_token
 
 logger = logging.getLogger(__name__)
 
+# Key used to store the external token in the ADK session state
+_EXTERNAL_TOKEN_SESSION_KEY = "__external_token__"
 
-class TokenCapturingCallContextBuilder(CallContextBuilder):
-    """Custom CallContextBuilder that captures X-External-Token header and stores it in context.
 
-    This builder extracts the X-External-Token header from incoming requests and stores it
-    in a context variable for later use by MCP tools. The token is kept separate from the
-    session state to prevent agent access while still being available for tool authentication.
+class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
+    """Custom A2A agent executor that captures and stores the X-External-Token header.
+
+    This executor extends the standard A2aAgentExecutor to intercept the request
+    and store the X-External-Token header in the ADK session state. This allows
+    MCP tools to access the token via the header_provider hook, using ADK's
+    built-in session management rather than external context variables.
     """
 
-    def build(self, request: Request) -> ServerCallContext:
-        """Build ServerCallContext and capture the X-External-Token header.
+    async def _prepare_session(
+        self,
+        context: RequestContext,
+        run_request: AgentRunRequest,
+        runner: Runner,
+    ):
+        """Prepare the session and store the external token if present.
+
+        This method extends the parent implementation to capture the X-External-Token
+        header from the request context and store it in the session state.
 
         Args:
-            request: The incoming Starlette Request object
+            context: The A2A request context containing the call context with headers
+            run_request: The agent run request
+            runner: The ADK runner instance
 
         Returns:
-            A ServerCallContext with the token stored in context variables
+            The prepared session with the external token stored in its state
         """
-        # Extract and store the external token from the request headers
-        token = request.headers.get("X-External-Token")
-        set_external_token(token)
+        # Call parent to get or create the session
+        session = await super()._prepare_session(context, run_request, runner)
 
-        # Build the standard context with headers and auth information
-        # (following the pattern from DefaultCallContextBuilder)
-        user: A2AUser = UnauthenticatedUser()
-        state: dict[str, Any] = {}
-        try:
-            user = StarletteUserProxy(request.user)
-            state["auth"] = request.auth
-        except AttributeError as e:
-            # request.user or request.auth not available, which is expected
-            # when no authentication middleware is configured
-            logger.debug("Authentication not available in request: %s", e)
+        # Extract the X-External-Token header from the request context
+        # The call_context.state contains headers from the original HTTP request
+        if context.call_context and "headers" in context.call_context.state:
+            headers = context.call_context.state["headers"]
+            external_token = headers.get("x-external-token")  # HTTP headers are case-insensitive
+            
+            if external_token:
+                # Store the token in the session state with a private key
+                # Using update_session to persist the change
+                session.state[_EXTERNAL_TOKEN_SESSION_KEY] = external_token
+                await runner.session_service.update_session(session)
+                logger.debug("Stored external token in session %s", session.id)
 
-        state["headers"] = dict(request.headers)
-
-        return ServerCallContext(
-            user=user,
-            state=state,
-            requested_extensions=get_requested_extensions(request.headers.getlist(HTTP_EXTENSION_HEADER)),
-        )
+        return session
 
 
 class HealthCheckFilter(logging.Filter):
@@ -112,7 +115,8 @@ async def create_a2a_app(agent: BaseAgent, rpc_url: str) -> A2AStarletteApplicat
     # Create A2A components
     task_store = InMemoryTaskStore()
 
-    agent_executor = A2aAgentExecutor(
+    # Use custom executor that captures X-External-Token and stores in session
+    agent_executor = TokenCapturingA2aAgentExecutor(
         runner=create_runner,
     )
 
@@ -136,7 +140,6 @@ async def create_a2a_app(agent: BaseAgent, rpc_url: str) -> A2AStarletteApplicat
     return A2AStarletteApplication(
         agent_card=agent_card,
         http_handler=request_handler,
-        context_builder=TokenCapturingCallContextBuilder(),
     )
 
 

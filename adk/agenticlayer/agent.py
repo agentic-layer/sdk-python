@@ -16,9 +16,35 @@ from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
 from httpx_retries import Retry, RetryTransport
 
 from agenticlayer.config import InteractionType, McpTool, SubAgent
-from agenticlayer.token_context import get_mcp_headers
 
 logger = logging.getLogger(__name__)
+
+# Key used to retrieve the external token from the ADK session state
+# This must match the key used in agent_to_a2a.py
+_EXTERNAL_TOKEN_SESSION_KEY = "__external_token__"
+
+
+def _get_mcp_headers_from_session(readonly_context) -> dict[str, str]:
+    """Header provider function for MCP tools that retrieves token from ADK session.
+
+    This function is called by the ADK when MCP tools are invoked. It reads the
+    X-External-Token from the session state where it was stored during request
+    processing by TokenCapturingA2aAgentExecutor.
+
+    Args:
+        readonly_context: The ADK ReadonlyContext providing access to the session
+
+    Returns:
+        A dictionary of headers to include in MCP tool requests.
+        If a token is stored in the session, includes the X-External-Token header.
+    """
+    # Access the session state through the readonly context
+    # The session state is a dict that can contain the external token
+    if readonly_context and readonly_context.session:
+        external_token = readonly_context.session.state.get(_EXTERNAL_TOKEN_SESSION_KEY)
+        if external_token:
+            return {"X-External-Token": external_token}
+    return {}
 
 
 class AgentFactory:
@@ -111,10 +137,8 @@ class AgentFactory:
                         url=str(tool.url),
                         timeout=tool.timeout,
                     ),
-                    # Pass a header provider that injects the X-External-Token header
-                    # The lambda is needed because header_provider expects a ReadonlyContext parameter,
-                    # but we don't use it since we get the token from contextvars
-                    header_provider=lambda _ctx: get_mcp_headers(),
+                    # Pass header provider that retrieves X-External-Token from ADK session
+                    header_provider=_get_mcp_headers_from_session,
                 )
             )
 
