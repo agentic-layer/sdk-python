@@ -105,9 +105,9 @@ async def create_a2a_app(agent: BaseAgent, rpc_url: str) -> A2AStarletteApplicat
                 plugins=[CallbackTracerPlugin()],
             ),
             artifact_service=InMemoryArtifactService(),
-            session_service=InMemorySessionService(),  # type: ignore
-            memory_service=InMemoryMemoryService(),  # type: ignore
-            credential_service=InMemoryCredentialService(),  # type: ignore
+            session_service=InMemorySessionService(),
+            memory_service=InMemoryMemoryService(),
+            credential_service=InMemoryCredentialService(),
         )
 
     # Create A2A components
