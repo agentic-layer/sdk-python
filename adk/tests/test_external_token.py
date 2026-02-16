@@ -20,13 +20,13 @@ def test_header_provider_retrieves_token_from_session() -> None:
 
     # Create a mock readonly context
     class MockReadonlyContext:
-        def __init__(self, session):
+        def __init__(self, session: Session) -> None:
             self.session = session
 
     readonly_context = MockReadonlyContext(session)
 
     # When: Calling the header provider function
-    headers = _get_mcp_headers_from_session(readonly_context)
+    headers = _get_mcp_headers_from_session(readonly_context)  # type: ignore[arg-type]
 
     # Then: The headers should include the X-External-Token
     assert headers == {"X-External-Token": test_token}
@@ -46,13 +46,13 @@ def test_header_provider_returns_empty_when_no_token() -> None:
 
     # Create a mock readonly context
     class MockReadonlyContext:
-        def __init__(self, session):
+        def __init__(self, session: Session) -> None:
             self.session = session
 
     readonly_context = MockReadonlyContext(session)
 
     # When: Calling the header provider function
-    headers = _get_mcp_headers_from_session(readonly_context)
+    headers = _get_mcp_headers_from_session(readonly_context)  # type: ignore[arg-type]
 
     # Then: The headers should be empty
     assert headers == {}
@@ -61,7 +61,7 @@ def test_header_provider_returns_empty_when_no_token() -> None:
 def test_header_provider_handles_none_context() -> None:
     """Test that the header provider safely handles None context."""
     # When: Calling the header provider with None
-    headers = _get_mcp_headers_from_session(None)
+    headers = _get_mcp_headers_from_session(None)  # type: ignore[arg-type]
 
     # Then: The headers should be empty (no exception)
     assert headers == {}
