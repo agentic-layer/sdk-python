@@ -29,11 +29,9 @@ from starlette.applications import Starlette
 from .agent import AgentFactory
 from .callback_tracer_plugin import CallbackTracerPlugin
 from .config import McpTool, SubAgent
+from .constants import EXTERNAL_TOKEN_SESSION_KEY
 
 logger = logging.getLogger(__name__)
-
-# Key used to store the external token in the ADK session state
-_EXTERNAL_TOKEN_SESSION_KEY = "__external_token__"
 
 
 class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
@@ -76,7 +74,7 @@ class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
             if external_token:
                 # Store the token in the session state with a private key
                 # The session state is mutable and changes are persisted automatically
-                session.state[_EXTERNAL_TOKEN_SESSION_KEY] = external_token
+                session.state[EXTERNAL_TOKEN_SESSION_KEY] = external_token
                 logger.debug("Stored external token in session %s", session.id)
 
         return session

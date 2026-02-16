@@ -7,9 +7,9 @@ import logging
 import httpx
 from a2a.client import A2ACardResolver
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
-from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.agents import BaseAgent, LlmAgent
 from google.adk.agents.llm_agent import ToolUnion
+from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
 from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.mcp_tool import StreamableHTTPConnectionParams
@@ -17,19 +17,16 @@ from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
 from httpx_retries import Retry, RetryTransport
 
 from agenticlayer.config import InteractionType, McpTool, SubAgent
+from agenticlayer.constants import EXTERNAL_TOKEN_SESSION_KEY
 
 logger = logging.getLogger(__name__)
-
-# Key used to retrieve the external token from the ADK session state
-# This must match the key used in agent_to_a2a.py
-_EXTERNAL_TOKEN_SESSION_KEY = "__external_token__"
 
 
 def _get_mcp_headers_from_session(readonly_context: ReadonlyContext) -> dict[str, str]:
     """Header provider function for MCP tools that retrieves token from ADK session.
 
     This function is called by the ADK when MCP tools are invoked. It reads the
-    X-External-Token from the session state where it was stored during request
+    external token from the session state where it was stored during request
     processing by TokenCapturingA2aAgentExecutor.
 
     Args:
@@ -37,12 +34,12 @@ def _get_mcp_headers_from_session(readonly_context: ReadonlyContext) -> dict[str
 
     Returns:
         A dictionary of headers to include in MCP tool requests.
-        If a token is stored in the session, includes the X-External-Token header.
+        If a token is stored in the session, includes it in the headers.
     """
     # Access the session state through the readonly context
     # The session state is a dict that can contain the external token
     if readonly_context and readonly_context.session:
-        external_token = readonly_context.session.state.get(_EXTERNAL_TOKEN_SESSION_KEY)
+        external_token = readonly_context.session.state.get(EXTERNAL_TOKEN_SESSION_KEY)
         if external_token:
             return {"X-External-Token": external_token}
     return {}
@@ -138,7 +135,7 @@ class AgentFactory:
                         url=str(tool.url),
                         timeout=tool.timeout,
                     ),
-                    # Pass header provider that retrieves X-External-Token from ADK session
+                    # Provide header provider to inject session-stored token into tool requests
                     header_provider=_get_mcp_headers_from_session,
                 )
             )
