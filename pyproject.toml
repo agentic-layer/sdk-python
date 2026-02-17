@@ -19,6 +19,7 @@ dev = [
     "pytest-asyncio>=1.3.0",
     "asgi-lifespan>=2.1.0",
     "respx>=0.22.0",
+    "fastmcp>=3.0.0rc2",
 ]
 
 
@@ -50,6 +51,14 @@ addopts = """\
 --import-mode=importlib \
 --show-capture=no \
 """
+filterwarnings = [
+    # https://github.com/boto/boto3/issues/3889
+    "ignore::UserWarning:google.adk.*",
+    "ignore::DeprecationWarning:google.*",
+    "ignore::DeprecationWarning:litellm.*",
+    "ignore::DeprecationWarning:a2a.*",
+    "ignore::UserWarning:agenticlayer.*",
+]
 
 
 [tool.ruff]
@@ -71,8 +80,11 @@ extend-select = ["Q", "N", "I001", "PT", "TID251", "DTZ"]
 exclude_dirs = [".venv"]
 
 [tool.bandit.assert_used]
-skips = ["*_test.py", "*test_*.py"]
+skips = ["**/tests/*"]
 
 
 [tool.mypy]
 strict = true
+explicit_package_bases = true
+mypy_path = "adk"
+namespace_packages = true

@@ -25,9 +25,11 @@ class AgentFactory:
         self,
         timeout: httpx.Timeout = httpx.Timeout(timeout=10),
         retry: Retry = Retry(total=10, backoff_factor=0.5, max_backoff_wait=15),
+        httpx_client: httpx.AsyncClient | None = None,
     ) -> None:
         self.timeout = timeout
         self.transport = RetryTransport(retry=retry)
+        self.httpx_client = httpx_client
 
     async def load_agent(self, agent: LlmAgent, sub_agents: list[SubAgent], tools: list[McpTool]) -> LlmAgent:
         """
@@ -77,7 +79,11 @@ class AgentFactory:
                     base_url=base_url,
                 )
                 agent_card = await resolver.get_agent_card()
-            agent = RemoteA2aAgent(name=sub_agent.name, agent_card=agent_card)
+            agent = RemoteA2aAgent(
+                name=sub_agent.name,
+                agent_card=agent_card,
+                httpx_client=self.httpx_client,  # Pass through custom httpx client for testing
+            )
             # Set description from agent card, as this is currently done lazy on first RPC call to agent by ADK
             agent.description = agent_card.description
             if sub_agent.interaction_type == InteractionType.TOOL_CALL:

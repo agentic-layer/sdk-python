@@ -9,8 +9,6 @@ repos:
       - id: check-case-conflict
       - id: check-json
       - id: check-toml
-      - id: name-tests-test
-        args: [ --pytest-test-first ]
       - id: detect-private-key
       - id: end-of-file-fixer
       - id: trailing-whitespace
