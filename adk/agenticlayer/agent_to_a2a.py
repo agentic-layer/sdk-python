@@ -69,13 +69,25 @@ class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
         # The call_context.state contains headers from the original HTTP request
         if context.call_context and "headers" in context.call_context.state:
             headers = context.call_context.state["headers"]
-            external_token = headers.get("x-external-token")  # HTTP headers are case-insensitive
+            # Headers might be in different cases, check all variations
+            external_token = (
+                headers.get("x-external-token") 
+                or headers.get("X-External-Token")
+                or headers.get("X-EXTERNAL-TOKEN")
+            )
             
             if external_token:
-                # Store the token in the session state with a private key
-                # The session state is mutable and changes are persisted automatically
+                # Store the token in the session state
+                # NOTE: InMemorySessionService returns copies of sessions, so we need to
+                # update the internal storage directly
                 session.state[EXTERNAL_TOKEN_SESSION_KEY] = external_token
-                logger.debug("Stored external token in session %s", session.id)
+                
+                # Update the stored session directly (InMemorySessionService returns copies)
+                if hasattr(runner.session_service, "sessions"):
+                    stored_session = runner.session_service.sessions.get(session.app_name, {}).get(session.user_id, {}).get(session.id)
+                    if stored_session:
+                        stored_session.state[EXTERNAL_TOKEN_SESSION_KEY] = external_token
+                        logger.debug("Stored external token in session %s", session.id)
 
         return session
 
