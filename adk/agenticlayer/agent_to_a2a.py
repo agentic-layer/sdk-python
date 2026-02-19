@@ -78,16 +78,19 @@ class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
             
             if external_token:
                 # Store the token in the session state
-                # NOTE: InMemorySessionService returns copies of sessions, so we need to
-                # update the internal storage directly
-                session.state[EXTERNAL_TOKEN_SESSION_KEY] = external_token
-                
-                # Update the stored session directly (InMemorySessionService returns copies)
+                # NOTE: Session services return copies of sessions (e.g., InMemorySessionService uses deepcopy),
+                # so we must update the internal storage directly for changes to persist.
+                # This approach works with InMemorySessionService and should work with other session services
+                # that maintain an internal sessions dict structure.
                 if hasattr(runner.session_service, "sessions"):
                     stored_session = runner.session_service.sessions.get(session.app_name, {}).get(session.user_id, {}).get(session.id)
                     if stored_session:
                         stored_session.state[EXTERNAL_TOKEN_SESSION_KEY] = external_token
                         logger.debug("Stored external token in session %s", session.id)
+                    else:
+                        logger.warning("Could not find stored session to update with external token")
+                else:
+                    logger.warning("Session service does not have 'sessions' attribute - token may not persist")
 
         return session
 

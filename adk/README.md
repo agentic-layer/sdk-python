@@ -109,7 +109,7 @@ The SDK supports passing external API tokens from A2A requests to MCP tools. Thi
 ### How It Works
 
 1. **Token Capture**: When an A2A request includes the `X-External-Token` header, the SDK automatically captures and stores it in the ADK session state
-2. **Secure Storage**: The token is stored in ADK's session management system with a private key prefix (`__external_token__`), making it inaccessible to agent code
+2. **Secure Storage**: The token is stored in ADK's session state (not in memory state accessible to the LLM), ensuring the agent cannot directly access or leak it
 3. **Automatic Injection**: When MCP tools are invoked, the SDK uses ADK's `header_provider` hook to retrieve the token from the session and inject it as the `X-External-Token` header in tool requests
 4. **Propagation**: The token is passed to all connected MCP servers and sub-agents for the duration of the session
 
@@ -136,18 +136,11 @@ curl -X POST http://localhost:8000/ \
   }'
 ```
 
-The SDK will automatically pass `your-api-token-here` to all MCP tool calls made during that session.
-
-### Implementation Details
-
-- **TokenCapturingA2aAgentExecutor**: Custom A2A executor that extends `A2aAgentExecutor` to intercept requests and store the token in the ADK session state
-- **Session Storage**: Token stored in `session.state["__external_token__"]` using ADK's built-in session management
-- **Header Provider**: MCP tools configured with a `header_provider` function that reads from the session state via `ReadonlyContext`
-- **ADK Integration**: Uses ADK's official hooks and session mechanisms rather than external context variables
+The SDK will automatically pass `your-api-token-here` to all MCP tool calls and sub-agent requests made during that session.
 
 ### Security Considerations
 
-- Tokens are stored in ADK session state with a private key prefix (`__external_token__`)
+- Tokens are stored in ADK session state (separate from memory state that the LLM can access)
 - Tokens are not directly accessible to agent code through normal session state queries
 - Tokens persist for the session duration and are managed by ADK's session lifecycle
 - This is a simple authentication mechanism; for production use, consider implementing more sophisticated authentication and authorization schemes
