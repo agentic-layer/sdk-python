@@ -7,27 +7,94 @@ import contextlib
 import logging
 from typing import AsyncIterator, Awaitable, Callable
 
+from a2a.server.agent_execution.context import RequestContext
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
+from google.adk.a2a.converters.request_converter import AgentRunRequest
 from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
 from google.adk.agents import LlmAgent
 from google.adk.agents.base_agent import BaseAgent
 from google.adk.apps.app import App
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.auth.credential_service.in_memory_credential_service import InMemoryCredentialService
+from google.adk.events.event import Event
+from google.adk.events.event_actions import EventActions
 from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
+from google.adk.sessions.session import Session
 from starlette.applications import Starlette
 
 from .agent import AgentFactory
 from .callback_tracer_plugin import CallbackTracerPlugin
 from .config import McpTool, SubAgent
+from .constants import EXTERNAL_TOKEN_SESSION_KEY
 
 logger = logging.getLogger(__name__)
+
+
+class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
+    """Custom A2A agent executor that captures and stores the X-External-Token header.
+
+    This executor extends the standard A2aAgentExecutor to intercept the request
+    and store the X-External-Token header in the ADK session state. This allows
+    MCP tools to access the token via the header_provider hook, using ADK's
+    built-in session management rather than external context variables.
+    """
+
+    async def _prepare_session(
+        self,
+        context: RequestContext,
+        run_request: AgentRunRequest,
+        runner: Runner,
+    ) -> Session:
+        """Prepare the session and store the external token if present.
+
+        This method extends the parent implementation to capture the X-External-Token
+        header from the request context and store it in the session state using ADK's
+        recommended approach: creating an Event with state_delta and appending it to
+        the session.
+
+        Args:
+            context: The A2A request context containing the call context with headers
+            run_request: The agent run request
+            runner: The ADK runner instance
+
+        Returns:
+            The prepared session with the external token stored in its state
+        """
+        # Call parent to get or create the session
+        session: Session = await super()._prepare_session(context, run_request, runner)
+
+        # Extract the X-External-Token header from the request context
+        # The call_context.state contains headers from the original HTTP request
+        if context.call_context and "headers" in context.call_context.state:
+            headers = context.call_context.state["headers"]
+            # Headers might be in different cases, check all variations
+            external_token = (
+                headers.get("x-external-token") 
+                or headers.get("X-External-Token")
+                or headers.get("X-EXTERNAL-TOKEN")
+            )
+            
+            if external_token:
+                # Store the token in the session state using ADK's recommended method:
+                # Create an Event with a state_delta and append it to the session.
+                # This follows ADK's pattern for updating session state as documented at:
+                # https://google.github.io/adk-docs/sessions/state/#how-state-is-updated-recommended-methods
+                event = Event(
+                    author="system",
+                    actions=EventActions(
+                        state_delta={EXTERNAL_TOKEN_SESSION_KEY: external_token}
+                    )
+                )
+                await runner.session_service.append_event(session, event)
+                logger.debug("Stored external token in session %s via state_delta", session.id)
+
+        return session
 
 
 class HealthCheckFilter(logging.Filter):
@@ -55,15 +122,16 @@ async def create_a2a_app(agent: BaseAgent, rpc_url: str) -> A2AStarletteApplicat
                 plugins=[CallbackTracerPlugin()],
             ),
             artifact_service=InMemoryArtifactService(),
-            session_service=InMemorySessionService(),  # type: ignore
-            memory_service=InMemoryMemoryService(),  # type: ignore
-            credential_service=InMemoryCredentialService(),  # type: ignore
+            session_service=InMemorySessionService(),  # type: ignore[no-untyped-call]
+            memory_service=InMemoryMemoryService(),  # type: ignore[no-untyped-call]
+            credential_service=InMemoryCredentialService(),  # type: ignore[no-untyped-call]
         )
 
     # Create A2A components
     task_store = InMemoryTaskStore()
 
-    agent_executor = A2aAgentExecutor(
+    # Use custom executor that captures X-External-Token and stores in session
+    agent_executor = TokenCapturingA2aAgentExecutor(
         runner=create_runner,
     )
 

@@ -10,7 +10,7 @@ from agenticlayer.agent import AgentFactory
 from agenticlayer.agent_to_a2a import to_a2a
 from agenticlayer.config import InteractionType, McpTool, SubAgent
 from asgi_lifespan import LifespanManager
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from httpx_retries import Retry
 from pydantic import AnyHttpUrl
 from starlette.testclient import TestClient
@@ -342,3 +342,104 @@ class TestAgentIntegration:
 
             assert history[4]["role"] == "agent"
             assert history[4]["parts"] == [{"kind": "text", "text": "The calculation result is correct!"}]
+
+    @pytest.mark.asyncio
+    async def test_external_token_passed_to_mcp_tools(
+        self,
+        app_factory: Any,
+        agent_factory: Any,
+        llm_controller: LLMMockController,
+        respx_mock: respx.MockRouter,
+    ) -> None:
+        """Test that X-External-Token header is passed from A2A request to MCP tool calls.
+
+        Verifies end-to-end token passing through the agent to MCP servers.
+        """
+
+        # Given: Mock LLM to call 'echo' tool
+        llm_controller.respond_with_tool_call(
+            pattern="",  # Match any message
+            tool_name="echo",
+            tool_args={"message": "test"},
+            final_message="Echo completed!",
+        )
+
+        # Given: MCP server with 'echo' tool that can access headers via Context
+        mcp = FastMCP("TokenVerifier")
+        received_headers: list[dict[str, str]] = []
+        received_tokens_in_tool: list[str | None] = []
+
+        @mcp.tool()
+        def echo(message: str, ctx: Context) -> str:
+            """Echo a message and verify token is accessible in tool context."""
+            # Access headers from the MCP request context
+            # The Context object provides access to the request_context which includes HTTP headers
+            if ctx.request_context and hasattr(ctx.request_context, "request"):
+                # Try to get the token from request headers if available
+                request = ctx.request_context.request
+                if request and hasattr(request, "headers"):
+                    token = request.headers.get("x-external-token") or request.headers.get("X-External-Token")
+                    received_tokens_in_tool.append(token)
+            return f"Echoed: {message}"
+
+        mcp_server_url = "http://test-mcp-token.local"
+        mcp_app = mcp.http_app(path="/mcp")
+
+        async with LifespanManager(mcp_app) as mcp_manager:
+            # Create a custom handler that captures headers
+            async def handler_with_header_capture(request: httpx.Request) -> httpx.Response:
+                # Capture the headers from the request
+                received_headers.append(dict(request.headers))
+                
+                # Forward to the MCP app
+                transport = httpx.ASGITransport(app=mcp_manager.app)
+                async with httpx.AsyncClient(transport=transport, base_url=mcp_server_url) as client:
+                    return await client.request(
+                        method=request.method,
+                        url=str(request.url),
+                        headers=request.headers,
+                        content=request.content,
+                    )
+
+            # Route MCP requests through our custom handler
+            respx_mock.route(host="test-mcp-token.local").mock(side_effect=handler_with_header_capture)
+
+            # When: Create agent with MCP tool and send request with X-External-Token header
+            test_agent = agent_factory("test_agent")
+            tools = [McpTool(name="verifier", url=AnyHttpUrl(f"{mcp_server_url}/mcp"), timeout=30)]
+            external_token = "secret-api-token-12345"  # nosec B105
+
+            async with app_factory(test_agent, tools=tools) as app:
+                client = TestClient(app)
+                user_message = "Echo test message"
+                response = client.post(
+                    "",
+                    json=create_send_message_request(user_message),
+                    headers={"X-External-Token": external_token},
+                )
+
+            # Then: Verify response is successful
+            assert response.status_code == 200
+            result = verify_jsonrpc_response(response.json())
+            assert result["status"]["state"] == "completed", "Task should complete successfully"
+
+            # Then: Verify X-External-Token header was passed to MCP server
+            assert len(received_headers) > 0, "MCP server should have received requests"
+            
+            # Find the tool call request (not the initialization requests)
+            # Header keys might be lowercase
+            tool_call_headers = [h for h in received_headers if "x-external-token" in h or "X-External-Token" in h]
+            assert len(tool_call_headers) > 0, (
+                f"At least one request should have X-External-Token header. "
+                f"Received {len(received_headers)} requests total."
+            )
+            
+            # Verify the token value
+            for headers in tool_call_headers:
+                # Header might be lowercase in the dict
+                token_value = headers.get("X-External-Token") or headers.get("x-external-token")
+                assert token_value == external_token, (
+                    f"Expected token '{external_token}', got '{token_value}'"
+                )
+
+

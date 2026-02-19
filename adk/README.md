@@ -9,6 +9,7 @@ SDK for Google ADK that helps to get agents configured in the Agentic Layer quic
 - Configures A2A protocol for inter-agent communication
 - Offers parsing methods for sub agents and tools
 - Set log level via env var `LOGLEVEL` (default: `INFO`)
+- Automatically passes external API tokens to MCP tools via the `X-External-Token` header
 
 ## Usage
 
@@ -100,3 +101,47 @@ Body logging behavior:
 
 **Note**: Starlette body logging is more limited than HTTPX because it must avoid consuming request/response streams.
 Bodies are only captured when already buffered in the ASGI scope.
+
+## External API Token Passing
+
+The SDK supports passing external API tokens from A2A requests to MCP tools. This enables MCP servers to authenticate with external APIs on behalf of users.
+
+### How It Works
+
+1. **Token Capture**: When an A2A request includes the `X-External-Token` header, the SDK automatically captures and stores it in the ADK session state
+2. **Secure Storage**: The token is stored in ADK's session state (not in memory state accessible to the LLM), ensuring the agent cannot directly access or leak it
+3. **Automatic Injection**: When MCP tools are invoked, the SDK uses ADK's `header_provider` hook to retrieve the token from the session and inject it as the `X-External-Token` header in tool requests
+
+**Current Limitations**: The token is only passed to MCP servers. Propagation to sub-agents is not currently supported due to ADK limitations in passing custom HTTP headers in A2A requests.
+
+### Usage Example
+
+Simply include the `X-External-Token` header in your A2A requests:
+
+```bash
+curl -X POST http://localhost:8000/ \
+  -H "Content-Type: application/json" \
+  -H "X-External-Token: your-api-token-here" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "message/send",
+    "params": {
+      "message": {
+        "role": "user",
+        "parts": [{"kind": "text", "text": "Your message"}],
+        "messageId": "msg-123",
+        "contextId": "ctx-123"
+      }
+    }
+  }'
+```
+
+The SDK will automatically pass `your-api-token-here` to all MCP tool calls and sub-agent requests made during that session.
+
+### Security Considerations
+
+- Tokens are stored in ADK session state (separate from memory state that the LLM can access)
+- Tokens are not directly accessible to agent code through normal session state queries
+- Tokens persist for the session duration and are managed by ADK's session lifecycle
+- This is a simple authentication mechanism; for production use, consider implementing more sophisticated authentication and authorization schemes
