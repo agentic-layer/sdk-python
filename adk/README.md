@@ -111,7 +111,8 @@ The SDK supports passing external API tokens from A2A requests to MCP tools. Thi
 1. **Token Capture**: When an A2A request includes the `X-External-Token` header, the SDK automatically captures and stores it in the ADK session state
 2. **Secure Storage**: The token is stored in ADK's session state (not in memory state accessible to the LLM), ensuring the agent cannot directly access or leak it
 3. **Automatic Injection**: When MCP tools are invoked, the SDK uses ADK's `header_provider` hook to retrieve the token from the session and inject it as the `X-External-Token` header in tool requests
-4. **Propagation**: The token is passed to all connected MCP servers and sub-agents for the duration of the session
+
+**Current Limitations**: The token is only passed to MCP servers. Propagation to sub-agents is not currently supported due to ADK limitations in passing custom HTTP headers in A2A requests.
 
 ### Usage Example
 
