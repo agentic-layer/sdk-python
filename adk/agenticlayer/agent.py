@@ -19,8 +19,13 @@ from httpx_retries import Retry, RetryTransport
 
 from agenticlayer.config import InteractionType, McpTool, SubAgent
 from agenticlayer.constants import HTTP_HEADERS_SESSION_KEY
+from agenticlayer.mcp_session_patch import apply_mcp_session_patch
 
 logger = logging.getLogger(__name__)
+
+# Apply the MCP session manager patch on module import
+# This fixes the session invalidation issue when MCP servers restart
+apply_mcp_session_patch()
 
 
 def _create_header_provider(propagate_headers: list[str]) -> Callable[[ReadonlyContext], dict[str, str]]:
