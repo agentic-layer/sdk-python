@@ -67,4 +67,3 @@ def test_header_provider_handles_none_context() -> None:
 
     # Then: The headers should be empty (no exception)
     assert headers == {}
-

@@ -9,6 +9,7 @@ from a2a.client.errors import A2AClientHTTPError
 from agenticlayer.agent import AgentFactory
 from agenticlayer.agent_to_a2a import to_a2a
 from agenticlayer.config import InteractionType, McpTool, SubAgent
+from agenticlayer.loguru_config import setup_logging
 from asgi_lifespan import LifespanManager
 from fastmcp import Context, FastMCP
 from httpx_retries import Retry
@@ -21,6 +22,8 @@ from tests.utils.helpers import (
     create_send_message_request,
     verify_jsonrpc_response,
 )
+
+setup_logging()
 
 
 class TestAgentIntegration:
@@ -390,7 +393,7 @@ class TestAgentIntegration:
             async def handler_with_header_capture(request: httpx.Request) -> httpx.Response:
                 # Capture the headers from the request
                 received_headers.append(dict(request.headers))
-                
+
                 # Forward to the MCP app
                 transport = httpx.ASGITransport(app=mcp_manager.app)
                 async with httpx.AsyncClient(transport=transport, base_url=mcp_server_url) as client:
@@ -425,7 +428,7 @@ class TestAgentIntegration:
 
             # Then: Verify X-External-Token header was passed to MCP server
             assert len(received_headers) > 0, "MCP server should have received requests"
-            
+
             # Find the tool call request (not the initialization requests)
             # Header keys might be lowercase
             tool_call_headers = [h for h in received_headers if "x-external-token" in h or "X-External-Token" in h]
@@ -433,13 +436,9 @@ class TestAgentIntegration:
                 f"At least one request should have X-External-Token header. "
                 f"Received {len(received_headers)} requests total."
             )
-            
+
             # Verify the token value
             for headers in tool_call_headers:
                 # Header might be lowercase in the dict
                 token_value = headers.get("X-External-Token") or headers.get("x-external-token")
-                assert token_value == external_token, (
-                    f"Expected token '{external_token}', got '{token_value}'"
-                )
-
-
+                assert token_value == external_token, f"Expected token '{external_token}', got '{token_value}'"

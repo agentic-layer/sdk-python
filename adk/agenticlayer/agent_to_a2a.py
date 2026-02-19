@@ -75,21 +75,16 @@ class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
             headers = context.call_context.state["headers"]
             # Headers might be in different cases, check all variations
             external_token = (
-                headers.get("x-external-token") 
-                or headers.get("X-External-Token")
-                or headers.get("X-EXTERNAL-TOKEN")
+                headers.get("x-external-token") or headers.get("X-External-Token") or headers.get("X-EXTERNAL-TOKEN")
             )
-            
+
             if external_token:
                 # Store the token in the session state using ADK's recommended method:
                 # Create an Event with a state_delta and append it to the session.
                 # This follows ADK's pattern for updating session state as documented at:
                 # https://google.github.io/adk-docs/sessions/state/#how-state-is-updated-recommended-methods
                 event = Event(
-                    author="system",
-                    actions=EventActions(
-                        state_delta={EXTERNAL_TOKEN_SESSION_KEY: external_token}
-                    )
+                    author="system", actions=EventActions(state_delta={EXTERNAL_TOKEN_SESSION_KEY: external_token})
                 )
                 await runner.session_service.append_event(session, event)
                 logger.debug("Stored external token in session %s via state_delta", session.id)
