@@ -78,7 +78,7 @@ class TestAgentIntegration:
 
     @pytest.mark.asyncio
     async def test_simple_conversation(
-        self, app_factory: Any, agent_factory: Any, llm_controller: LLMMockController
+            self, app_factory: Any, agent_factory: Any, llm_controller: LLMMockController
     ) -> None:
         """Test basic agent conversation with mocked LLM.
 
@@ -116,11 +116,11 @@ class TestAgentIntegration:
 
     @pytest.mark.asyncio
     async def test_with_sub_agent(
-        self,
-        app_factory: Any,
-        agent_factory: Any,
-        llm_controller: LLMMockController,
-        respx_mock: respx.MockRouter,
+            self,
+            app_factory: Any,
+            agent_factory: Any,
+            llm_controller: LLMMockController,
+            respx_mock: respx.MockRouter,
     ) -> None:
         """Test main agent configured with a sub-agent.
 
@@ -191,7 +191,7 @@ class TestAgentIntegration:
                         call
                         for call in respx_mock.calls
                         if call.request.url.path == "/.well-known/agent-card.json"
-                        and "sub-agent.test" in str(call.request.url)
+                           and "sub-agent.test" in str(call.request.url)
                     ]
                     assert len(agent_card_calls) == 1, "Sub-agent card should be fetched during startup"
 
@@ -251,11 +251,11 @@ class TestAgentIntegration:
 
     @pytest.mark.asyncio
     async def test_with_tool_server(
-        self,
-        app_factory: Any,
-        agent_factory: Any,
-        llm_controller: LLMMockController,
-        respx_mock: respx.MockRouter,
+            self,
+            app_factory: Any,
+            agent_factory: Any,
+            llm_controller: LLMMockController,
+            respx_mock: respx.MockRouter,
     ) -> None:
         """Test agent calling an MCP server tool.
 
@@ -348,11 +348,11 @@ class TestAgentIntegration:
 
     @pytest.mark.asyncio
     async def test_external_token_passed_to_mcp_tools(
-        self,
-        app_factory: Any,
-        agent_factory: Any,
-        llm_controller: LLMMockController,
-        respx_mock: respx.MockRouter,
+            self,
+            app_factory: Any,
+            agent_factory: Any,
+            llm_controller: LLMMockController,
+            respx_mock: respx.MockRouter,
     ) -> None:
         """Test that X-External-Token header is passed from A2A request to MCP tool calls.
 
@@ -442,3 +442,160 @@ class TestAgentIntegration:
                 # Header might be lowercase in the dict
                 token_value = headers.get("X-External-Token") or headers.get("x-external-token")
                 assert token_value == external_token, f"Expected token '{external_token}', got '{token_value}'"
+
+    @pytest.mark.asyncio
+    async def test_mcp_server_restart_causes_communication_failure(
+            self,
+            app_factory: Any,
+            agent_factory: Any,
+            llm_controller: LLMMockController,
+            respx_mock: respx.MockRouter,
+    ) -> None:
+        """Test that agent fails to communicate with MCP server after server restart.
+
+        This test reproduces the issue where:
+        1. Agent successfully calls an MCP server tool
+        2. MCP server restarts (losing session state)
+        3. Agent tries to call the tool again with the SAME agent instance
+        4. Communication fails because the cached MCP session is no longer valid
+
+        This reproduces the real-world scenario where a server restarts and loses
+        all session state, but the client still has cached session objects.
+
+        Expected behavior after this issue is fixed:
+        - The agent should automatically detect the invalid session
+        - Create a new session with the restarted server
+        - Successfully complete the second tool call
+        """
+
+        # Given: Mock LLM to call 'add' tool twice
+        llm_controller.respond_with_tool_call(
+            pattern="first call",
+            tool_name="add",
+            tool_args={"a": 2, "b": 3},
+            final_message="First calculation done: 5",
+        )
+        llm_controller.respond_with_tool_call(
+            pattern="second call",
+            tool_name="add",
+            tool_args={"a": 10, "b": 20},
+            final_message="Second calculation done: 30",
+        )
+
+        # Given: MCP server with 'add' tool
+        mcp = FastMCP("Calculator")
+
+        @mcp.tool()
+        def add(a: int, b: int) -> int:
+            """Add two numbers."""
+            return a + b
+
+        mcp_server_url = "http://test-mcp-restart.local"
+        mcp_app = mcp.http_app(path="/mcp")
+
+        # Track server state to simulate restart
+        server_state: dict[str, Any] = {
+            "accept_old_sessions": True,
+            "old_session_ids": set(),
+        }
+
+        async with LifespanManager(mcp_app) as mcp_manager:
+            # Handler that can reject old session IDs after "restart"
+            async def session_handler(request: httpx.Request) -> httpx.Response:
+                url_str = str(request.url)
+
+                # Extract session ID from URL path (e.g., /mcp/messages/SESSION_ID)
+                session_id = None
+                if "/messages/" in url_str:
+                    parts = url_str.split("/messages/")
+                    if len(parts) > 1:
+                        session_id = parts[1].split("/")[0].split("?")[0]
+
+                # Check if we should reject this session
+                if session_id and session_id in server_state["old_session_ids"]:
+                    if not server_state["accept_old_sessions"]:
+                        # Server has "restarted" and doesn't recognize old sessions
+                        print(f"  [Server] Rejecting old session: {session_id}")
+                        return httpx.Response(
+                            status_code=404,
+                            json={"error": "Session not found"},
+                            headers={"content-type": "application/json"},
+                        )
+
+                # Forward request to MCP server
+                transport = httpx.ASGITransport(app=mcp_manager.app)
+                async with httpx.AsyncClient(transport=transport, base_url=mcp_server_url) as client:
+                    response = await client.request(
+                        method=request.method,
+                        url=str(request.url),
+                        headers=request.headers,
+                        content=request.content,
+                    )
+
+                    # Track successful session IDs
+                    if session_id and response.status_code == 200:
+                        server_state["old_session_ids"].add(session_id)
+
+                    return response
+
+            respx_mock.route(host="test-mcp-restart.local").mock(side_effect=session_handler)
+
+            # When: Create agent with MCP tool
+            test_agent = agent_factory("test_agent")
+            tools = [McpTool(name="calc", url=AnyHttpUrl(f"{mcp_server_url}/mcp"), timeout=30)]
+
+            async with app_factory(test_agent, tools=tools) as app:
+                client = TestClient(app)
+
+                # ===== FIRST CALL =====
+                print("\n=== FIRST CALL: Should succeed ===")
+                response1 = client.post("", json=create_send_message_request("first call: Calculate 2 + 3"))
+
+                # Then: Verify first call succeeded
+                assert response1.status_code == 200
+                result1 = verify_jsonrpc_response(response1.json())
+                assert result1["status"]["state"] == "completed", "First task should complete successfully"
+                print("✓ First call completed successfully")
+
+                # ===== SIMULATE SERVER RESTART =====
+                print("\n=== SIMULATING SERVER RESTART ===")
+                print("  Server will reject all previously established sessions")
+                server_state["accept_old_sessions"] = False
+
+                # ===== SECOND CALL =====
+                print("\n=== SECOND CALL: Should fail with current implementation ===")
+                response2 = client.post("", json=create_send_message_request("second call: Calculate 10 + 20"))
+
+                # Then: Verify the issue is reproduced
+                assert response2.status_code == 200, "A2A response should be 200 even if task failed"
+                result2 = verify_jsonrpc_response(response2.json())
+
+                task_state = result2["status"]["state"]
+                print(f"✓ Task state: {task_state}")
+
+                # Document the current behavior: task should fail
+                if task_state == "failed":
+                    print("\n=== ISSUE SUCCESSFULLY REPRODUCED ===")
+                    print("The agent failed to communicate with the MCP server after restart.")
+                    print("This is the bug we're documenting.")
+                    error_msg = result2["status"].get("message", {}).get("parts", [{}])[0].get("text", "")
+                    print(f"Error message: {error_msg}")
+
+                    # Assert that we got the expected failure
+                    assert "Failed to create MCP session" in error_msg or "MCP" in error_msg, (
+                        f"Expected MCP session error, got: {error_msg}"
+                    )
+
+                elif task_state == "completed":
+                    print("\n=== ISSUE NOT REPRODUCED (or already fixed) ===")
+                    print("The agent successfully reconnected despite the server restart.")
+                    print("This suggests the MCP client auto-recovery is working.")
+                    # If this happens, the issue might already be fixed or the test isn't right
+                    # For now, we'll fail the test to investigate
+                    pytest.fail(
+                        "Expected task to fail after server restart, but it completed successfully. "
+                        "Either the bug is already fixed, or the test needs adjustment."
+                    )
+                else:
+                    print(f"\n=== UNEXPECTED STATE: {task_state} ===")
+                    pytest.fail(f"Unexpected task state: {task_state}")
