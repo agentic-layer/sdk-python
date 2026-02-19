@@ -36,12 +36,40 @@ def _get_mcp_headers_from_session(readonly_context: ReadonlyContext) -> dict[str
         A dictionary of headers to include in MCP tool requests.
         If a token is stored in the session, includes it in the headers.
     """
-    # Access the session state through the readonly context
-    # The session state is a dict that can contain the external token
-    if readonly_context and readonly_context.session:
-        external_token = readonly_context.session.state.get(EXTERNAL_TOKEN_SESSION_KEY)
+    # Access the session state directly from the readonly context
+    if readonly_context and readonly_context.state:
+        external_token = readonly_context.state.get(EXTERNAL_TOKEN_SESSION_KEY)
         if external_token:
             return {"X-External-Token": external_token}
+    return {}
+
+
+def _inject_external_token_to_sub_agent(invocation_context, a2a_message):  # noqa: ARG001
+    """Metadata provider for RemoteA2aAgent that injects external token into A2A requests.
+
+    This function is called by RemoteA2aAgent when making A2A requests to sub-agents.
+    It reads the external token from the session state and injects it as a request header.
+
+    Args:
+        invocation_context: The invocation context containing the session
+        a2a_message: The A2A message being sent (unused)
+
+    Returns:
+        A dictionary that will be passed as request_metadata. The ADK appears to use
+        this to set http_kwargs which includes headers for the HTTP request.
+    """
+    # Access the session state from the invocation context
+    if invocation_context and invocation_context.session:
+        external_token = invocation_context.session.state.get(EXTERNAL_TOKEN_SESSION_KEY)
+        logger.debug(
+            f"Sub-agent metadata provider called. Token from session: "
+            f"{'<present>' if external_token else '<none>'}"
+        )
+        if external_token:
+            # Return headers dict - the ADK/A2A client will merge this into http_kwargs
+            return {"headers": {"X-External-Token": external_token}}
+    else:
+        logger.debug("Sub-agent metadata provider called with no session")
     return {}
 
 
@@ -108,6 +136,7 @@ class AgentFactory:
                 name=sub_agent.name,
                 agent_card=agent_card,
                 httpx_client=self.httpx_client,  # Pass through custom httpx client for testing
+                a2a_request_meta_provider=_inject_external_token_to_sub_agent,  # Inject token into sub-agent requests
             )
             # Set description from agent card, as this is currently done lazy on first RPC call to agent by ADK
             agent.description = agent_card.description

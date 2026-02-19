@@ -443,7 +443,11 @@ class TestAgentIntegration:
                 )
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Sub-agent token propagation not yet implemented - requires ADK support for custom headers in A2A requests")
+    @pytest.mark.skip(
+        reason="Sub-agent token propagation via HTTP headers not currently supported by ADK. "
+        "The a2a_request_meta_provider injects metadata into the JSON-RPC request body, "
+        "not HTTP headers. ADK enhancement needed to pass custom HTTP headers to sub-agents."
+    )
     async def test_external_token_passed_to_sub_agents(
         self,
         app_factory: Any,

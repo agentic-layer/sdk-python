@@ -22,6 +22,7 @@ def test_header_provider_retrieves_token_from_session() -> None:
     class MockReadonlyContext:
         def __init__(self, session: Session) -> None:
             self.session = session
+            self.state = session.state  # Add state property for direct access
 
     readonly_context = MockReadonlyContext(session)
 
@@ -48,6 +49,7 @@ def test_header_provider_returns_empty_when_no_token() -> None:
     class MockReadonlyContext:
         def __init__(self, session: Session) -> None:
             self.session = session
+            self.state = session.state  # Add state property for direct access
 
     readonly_context = MockReadonlyContext(session)
 
