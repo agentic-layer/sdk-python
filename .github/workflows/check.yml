@@ -19,10 +19,5 @@ jobs:
           version: "0.10.4"
           enable-cache: true
 
-      - name: Setup Python
-        uses: 'actions/setup-python@v6'
-        with:
-          python-version-file: "pyproject.toml"
-
       - name: Run checks
         run: make check
