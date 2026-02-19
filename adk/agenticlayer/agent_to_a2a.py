@@ -20,6 +20,8 @@ from google.adk.agents.base_agent import BaseAgent
 from google.adk.apps.app import App
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.auth.credential_service.in_memory_credential_service import InMemoryCredentialService
+from google.adk.events.event import Event
+from google.adk.events.event_actions import EventActions
 from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
@@ -52,7 +54,9 @@ class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
         """Prepare the session and store the external token if present.
 
         This method extends the parent implementation to capture the X-External-Token
-        header from the request context and store it in the session state.
+        header from the request context and store it in the session state using ADK's
+        recommended approach: creating an Event with state_delta and appending it to
+        the session.
 
         Args:
             context: The A2A request context containing the call context with headers
@@ -77,20 +81,18 @@ class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
             )
             
             if external_token:
-                # Store the token in the session state
-                # NOTE: Session services return copies of sessions (e.g., InMemorySessionService uses deepcopy),
-                # so we must update the internal storage directly for changes to persist.
-                # This approach works with InMemorySessionService and should work with other session services
-                # that maintain an internal sessions dict structure.
-                if hasattr(runner.session_service, "sessions"):
-                    stored_session = runner.session_service.sessions.get(session.app_name, {}).get(session.user_id, {}).get(session.id)
-                    if stored_session:
-                        stored_session.state[EXTERNAL_TOKEN_SESSION_KEY] = external_token
-                        logger.debug("Stored external token in session %s", session.id)
-                    else:
-                        logger.warning("Could not find stored session to update with external token")
-                else:
-                    logger.warning("Session service does not have 'sessions' attribute - token may not persist")
+                # Store the token in the session state using ADK's recommended method:
+                # Create an Event with a state_delta and append it to the session.
+                # This follows ADK's pattern for updating session state as documented at:
+                # https://google.github.io/adk-docs/sessions/state/#how-state-is-updated-recommended-methods
+                event = Event(
+                    author="system",
+                    actions=EventActions(
+                        state_delta={EXTERNAL_TOKEN_SESSION_KEY: external_token}
+                    )
+                )
+                await runner.session_service.append_event(session, event)
+                logger.debug("Stored external token in session %s via state_delta", session.id)
 
         return session
 
