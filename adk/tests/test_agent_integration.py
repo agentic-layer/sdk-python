@@ -442,3 +442,317 @@ class TestAgentIntegration:
                 # Header might be lowercase in the dict
                 token_value = headers.get("X-External-Token") or headers.get("x-external-token")
                 assert token_value == external_token, f"Expected token '{external_token}', got '{token_value}'"
+
+    @pytest.mark.asyncio
+    async def test_multiple_headers_propagated_to_mcp_tools(
+        self,
+        app_factory: Any,
+        agent_factory: Any,
+        llm_controller: LLMMockController,
+        respx_mock: respx.MockRouter,
+    ) -> None:
+        """Test that multiple configured headers are passed from A2A request to MCP tool calls."""
+
+        # Given: Mock LLM to call 'echo' tool
+        llm_controller.respond_with_tool_call(
+            pattern="",  # Match any message
+            tool_name="echo",
+            tool_args={"message": "test"},
+            final_message="Echo completed!",
+        )
+
+        # Given: MCP server with 'echo' tool
+        mcp = FastMCP("MultiHeaderVerifier")
+        received_headers: list[dict[str, str]] = []
+
+        @mcp.tool()
+        def echo(message: str) -> str:
+            """Echo a message."""
+            return f"Echoed: {message}"
+
+        mcp_server_url = "http://test-multi-header.local"
+        mcp_app = mcp.http_app(path="/mcp")
+
+        async with LifespanManager(mcp_app) as mcp_manager:
+            # Create a custom handler that captures headers
+            async def handler_with_header_capture(request: httpx.Request) -> httpx.Response:
+                # Capture the headers from the request
+                received_headers.append(dict(request.headers))
+
+                # Forward to the MCP app
+                transport = httpx.ASGITransport(app=mcp_manager.app)
+                async with httpx.AsyncClient(transport=transport, base_url=mcp_server_url) as client:
+                    return await client.request(
+                        method=request.method,
+                        url=str(request.url),
+                        headers=request.headers,
+                        content=request.content,
+                    )
+
+            # Route MCP requests through our custom handler
+            respx_mock.route(host="test-multi-header.local").mock(side_effect=handler_with_header_capture)
+
+            # When: Create agent with MCP tool configured to propagate multiple headers
+            test_agent = agent_factory("test_agent")
+            tools = [
+                McpTool(
+                    name="verifier",
+                    url=AnyHttpUrl(f"{mcp_server_url}/mcp"),
+                    timeout=30,
+                    propagate_headers=["X-API-Key", "X-Custom-Header", "Authorization"],
+                )
+            ]
+
+            async with app_factory(test_agent, tools=tools) as app:
+                client = TestClient(app)
+                user_message = "Echo test message"
+                response = client.post(
+                    "",
+                    json=create_send_message_request(user_message),
+                    headers={
+                        "X-API-Key": "api-key-12345",
+                        "X-Custom-Header": "custom-value",
+                        "Authorization": "Bearer token123",
+                        "X-Ignored-Header": "should-not-be-sent",
+                    },
+                )
+
+            # Then: Verify response is successful
+            assert response.status_code == 200
+            result = verify_jsonrpc_response(response.json())
+            assert result["status"]["state"] == "completed", "Task should complete successfully"
+
+            # Then: Verify only configured headers were passed to MCP server
+            assert len(received_headers) > 0, "MCP server should have received requests"
+
+            # Find the tool call request (check all headers)
+            tool_call_headers = [
+                h
+                for h in received_headers
+                if any(key.lower() in ["x-api-key", "x-custom-header", "authorization"] for key in h.keys())
+            ]
+            assert len(tool_call_headers) > 0, "At least one request should have configured headers"
+
+            # Verify all configured headers are present
+            for headers in tool_call_headers:
+                # Check for each configured header (case-insensitive)
+                headers_lower = {k.lower(): v for k, v in headers.items()}
+
+                if "x-api-key" in headers_lower:
+                    assert headers_lower["x-api-key"] == "api-key-12345"
+                if "x-custom-header" in headers_lower:
+                    assert headers_lower["x-custom-header"] == "custom-value"
+                if "authorization" in headers_lower:
+                    assert headers_lower["authorization"] == "Bearer token123"
+
+                # Verify ignored header is NOT present
+                assert "X-Ignored-Header" not in headers
+                assert "x-ignored-header" not in headers_lower
+
+    @pytest.mark.asyncio
+    async def test_different_headers_per_mcp_server(
+        self,
+        app_factory: Any,
+        agent_factory: Any,
+        llm_controller: LLMMockController,
+        respx_mock: respx.MockRouter,
+    ) -> None:
+        """Test that different MCP servers receive only their configured headers."""
+
+        # Given: Mock LLM to call both tools
+        llm_controller.respond_with_tool_call(
+            pattern="",
+            tool_name="server1_echo",
+            tool_args={"message": "test1"},
+            final_message="First call done",
+        )
+        llm_controller.respond_with_tool_call(
+            pattern="",
+            tool_name="server2_echo",
+            tool_args={"message": "test2"},
+            final_message="Second call done",
+        )
+
+        # Given: Two MCP servers
+        mcp1 = FastMCP("Server1")
+        mcp2 = FastMCP("Server2")
+        server1_headers: list[dict[str, str]] = []
+        server2_headers: list[dict[str, str]] = []
+
+        @mcp1.tool()
+        def server1_echo(message: str) -> str:
+            """Echo from server 1."""
+            return f"Server1: {message}"
+
+        @mcp2.tool()
+        def server2_echo(message: str) -> str:
+            """Echo from server 2."""
+            return f"Server2: {message}"
+
+        mcp1_url = "http://test-mcp1.local"
+        mcp2_url = "http://test-mcp2.local"
+        mcp1_app = mcp1.http_app(path="/mcp")
+        mcp2_app = mcp2.http_app(path="/mcp")
+
+        async with LifespanManager(mcp1_app) as mcp1_manager, LifespanManager(mcp2_app) as mcp2_manager:
+            # Handlers for each server
+            async def handler1(request: httpx.Request) -> httpx.Response:
+                server1_headers.append(dict(request.headers))
+                transport = httpx.ASGITransport(app=mcp1_manager.app)
+                async with httpx.AsyncClient(transport=transport, base_url=mcp1_url) as client:
+                    return await client.request(
+                        method=request.method, url=str(request.url), headers=request.headers, content=request.content
+                    )
+
+            async def handler2(request: httpx.Request) -> httpx.Response:
+                server2_headers.append(dict(request.headers))
+                transport = httpx.ASGITransport(app=mcp2_manager.app)
+                async with httpx.AsyncClient(transport=transport, base_url=mcp2_url) as client:
+                    return await client.request(
+                        method=request.method, url=str(request.url), headers=request.headers, content=request.content
+                    )
+
+            respx_mock.route(host="test-mcp1.local").mock(side_effect=handler1)
+            respx_mock.route(host="test-mcp2.local").mock(side_effect=handler2)
+
+            # When: Create agent with two MCP tools with different header configs
+            test_agent = agent_factory("test_agent")
+            tools = [
+                McpTool(
+                    name="server1",
+                    url=AnyHttpUrl(f"{mcp1_url}/mcp"),
+                    timeout=30,
+                    propagate_headers=["X-Server1-Token"],  # Only X-Server1-Token
+                ),
+                McpTool(
+                    name="server2",
+                    url=AnyHttpUrl(f"{mcp2_url}/mcp"),
+                    timeout=30,
+                    propagate_headers=["X-Server2-Token", "Authorization"],  # Different headers
+                ),
+            ]
+
+            async with app_factory(test_agent, tools=tools) as app:
+                client = TestClient(app)
+                response = client.post(
+                    "",
+                    json=create_send_message_request("Test message"),
+                    headers={
+                        "X-Server1-Token": "token-for-server1",
+                        "X-Server2-Token": "token-for-server2",
+                        "Authorization": "Bearer shared-token",
+                        "X-Common-Header": "should-not-be-sent",
+                    },
+                )
+
+            # Then: Verify response is successful
+            assert response.status_code == 200
+            result = verify_jsonrpc_response(response.json())
+            assert result["status"]["state"] == "completed", "Task should complete successfully"
+
+            # Then: Verify server1 only received X-Server1-Token
+            assert len(server1_headers) > 0, "Server1 should have received requests"
+            for headers in server1_headers:
+                headers_lower = {k.lower(): v for k, v in headers.items()}
+                if "x-server1-token" in headers_lower:
+                    assert headers_lower["x-server1-token"] == "token-for-server1"
+                # Should NOT have server2's headers
+                assert "x-server2-token" not in headers_lower
+                assert "authorization" not in headers_lower
+                assert "x-common-header" not in headers_lower
+
+            # Then: Verify server2 only received X-Server2-Token and Authorization
+            assert len(server2_headers) > 0, "Server2 should have received requests"
+            for headers in server2_headers:
+                headers_lower = {k.lower(): v for k, v in headers.items()}
+                if "x-server2-token" in headers_lower:
+                    assert headers_lower["x-server2-token"] == "token-for-server2"
+                if "authorization" in headers_lower:
+                    assert headers_lower["authorization"] == "Bearer shared-token"
+                # Should NOT have server1's headers
+                assert "x-server1-token" not in headers_lower
+                assert "x-common-header" not in headers_lower
+
+    @pytest.mark.asyncio
+    async def test_backward_compatibility_no_propagate_headers(
+        self,
+        app_factory: Any,
+        agent_factory: Any,
+        llm_controller: LLMMockController,
+        respx_mock: respx.MockRouter,
+    ) -> None:
+        """Test backward compatibility: when propagate_headers is not set, X-External-Token is still passed."""
+
+        # Given: Mock LLM to call 'echo' tool
+        llm_controller.respond_with_tool_call(
+            pattern="",
+            tool_name="echo",
+            tool_args={"message": "test"},
+            final_message="Echo completed!",
+        )
+
+        # Given: MCP server
+        mcp = FastMCP("BackwardCompatVerifier")
+        received_headers: list[dict[str, str]] = []
+
+        @mcp.tool()
+        def echo(message: str) -> str:
+            """Echo a message."""
+            return f"Echoed: {message}"
+
+        mcp_server_url = "http://test-backward-compat.local"
+        mcp_app = mcp.http_app(path="/mcp")
+
+        async with LifespanManager(mcp_app) as mcp_manager:
+            # Create a custom handler that captures headers
+            async def handler_with_header_capture(request: httpx.Request) -> httpx.Response:
+                received_headers.append(dict(request.headers))
+                transport = httpx.ASGITransport(app=mcp_manager.app)
+                async with httpx.AsyncClient(transport=transport, base_url=mcp_server_url) as client:
+                    return await client.request(
+                        method=request.method,
+                        url=str(request.url),
+                        headers=request.headers,
+                        content=request.content,
+                    )
+
+            respx_mock.route(host="test-backward-compat.local").mock(side_effect=handler_with_header_capture)
+
+            # When: Create agent with MCP tool WITHOUT propagate_headers config
+            test_agent = agent_factory("test_agent")
+            tools = [
+                McpTool(
+                    name="verifier",
+                    url=AnyHttpUrl(f"{mcp_server_url}/mcp"),
+                    timeout=30,
+                    # No propagate_headers specified - should use legacy behavior
+                )
+            ]
+            external_token = "legacy-token-12345"  # nosec B105
+
+            async with app_factory(test_agent, tools=tools) as app:
+                client = TestClient(app)
+                response = client.post(
+                    "",
+                    json=create_send_message_request("Test message"),
+                    headers={
+                        "X-External-Token": external_token,
+                        "X-Other-Header": "should-not-be-sent",
+                    },
+                )
+
+            # Then: Verify response is successful
+            assert response.status_code == 200
+            result = verify_jsonrpc_response(response.json())
+            assert result["status"]["state"] == "completed", "Task should complete successfully"
+
+            # Then: Verify X-External-Token was passed (legacy behavior)
+            assert len(received_headers) > 0, "MCP server should have received requests"
+            tool_call_headers = [h for h in received_headers if "x-external-token" in h or "X-External-Token" in h]
+            assert len(tool_call_headers) > 0, "At least one request should have X-External-Token header"
+
+            for headers in tool_call_headers:
+                headers_lower = {k.lower(): v for k, v in headers.items()}
+                assert headers_lower.get("x-external-token") == external_token
+                # Other headers should NOT be passed
+                assert "x-other-header" not in headers_lower
