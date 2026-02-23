@@ -24,7 +24,7 @@ class McpTool(BaseModel):
     name: str
     url: AnyHttpUrl
     timeout: int = 30
-    propagate_headers: list[str] = []
+    propagate_headers: list[str] | None = None
 
 
 def parse_sub_agents(sub_agents_config: str) -> list[SubAgent]:

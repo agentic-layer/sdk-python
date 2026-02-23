@@ -756,3 +756,87 @@ class TestAgentIntegration:
                 assert headers_lower.get("x-external-token") == external_token
                 # Other headers should NOT be passed
                 assert "x-other-header" not in headers_lower
+
+    @pytest.mark.asyncio
+    async def test_explicitly_empty_propagate_headers_sends_no_headers(
+        self,
+        app_factory: Any,
+        agent_factory: Any,
+        llm_controller: LLMMockController,
+        respx_mock: respx.MockRouter,
+    ) -> None:
+        """Test that explicitly setting propagate_headers to empty list sends no headers at all."""
+
+        # Given: Mock LLM to call 'echo' tool
+        llm_controller.respond_with_tool_call(
+            pattern="",
+            tool_name="echo",
+            tool_args={"message": "test"},
+            final_message="Echo completed!",
+        )
+
+        # Given: MCP server
+        mcp = FastMCP("NoHeadersVerifier")
+        received_headers: list[dict[str, str]] = []
+
+        @mcp.tool()
+        def echo(message: str) -> str:
+            """Echo a message."""
+            return f"Echoed: {message}"
+
+        mcp_server_url = "http://test-no-headers.local"
+        mcp_app = mcp.http_app(path="/mcp")
+
+        async with LifespanManager(mcp_app) as mcp_manager:
+            # Create a custom handler that captures headers
+            async def handler_with_header_capture(request: httpx.Request) -> httpx.Response:
+                received_headers.append(dict(request.headers))
+                transport = httpx.ASGITransport(app=mcp_manager.app)
+                async with httpx.AsyncClient(transport=transport, base_url=mcp_server_url) as client:
+                    return await client.request(
+                        method=request.method,
+                        url=str(request.url),
+                        headers=request.headers,
+                        content=request.content,
+                    )
+
+            respx_mock.route(host="test-no-headers.local").mock(side_effect=handler_with_header_capture)
+
+            # When: Create agent with MCP tool with EXPLICITLY empty propagate_headers
+            test_agent = agent_factory("test_agent")
+            tools = [
+                McpTool(
+                    name="verifier",
+                    url=AnyHttpUrl(f"{mcp_server_url}/mcp"),
+                    timeout=30,
+                    propagate_headers=[],  # Explicitly empty - should send NO headers
+                )
+            ]
+
+            async with app_factory(test_agent, tools=tools) as app:
+                client = TestClient(app)
+                response = client.post(
+                    "",
+                    json=create_send_message_request("Test message"),
+                    headers={
+                        "X-External-Token": "should-not-be-sent",
+                        "X-API-Key": "should-not-be-sent",
+                        "Authorization": "should-not-be-sent",
+                    },
+                )
+
+            # Then: Verify response is successful
+            assert response.status_code == 200
+            result = verify_jsonrpc_response(response.json())
+            assert result["status"]["state"] == "completed", "Task should complete successfully"
+
+            # Then: Verify NO custom headers were passed
+            assert len(received_headers) > 0, "MCP server should have received requests"
+
+            # Check that none of the custom headers are present in any request
+            for headers in received_headers:
+                headers_lower = {k.lower(): v for k, v in headers.items()}
+                # None of the application headers should be present
+                assert "x-external-token" not in headers_lower, "X-External-Token should not be sent"
+                assert "x-api-key" not in headers_lower, "X-API-Key should not be sent"
+                assert "authorization" not in headers_lower, "Authorization should not be sent"

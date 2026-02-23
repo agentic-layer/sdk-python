@@ -171,7 +171,7 @@ class AgentFactory:
 
             # Use configured header provider if propagate_headers is specified,
             # otherwise fall back to legacy behavior (x-external-token only)
-            if tool.propagate_headers:
+            if tool.propagate_headers is not None:
                 header_provider = _create_header_provider(tool.propagate_headers)
             else:
                 # Backward compatibility: use legacy provider that only sends x-external-token
