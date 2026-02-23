@@ -72,7 +72,36 @@ The JSON configuration for `AGENT_TOOLS` should follow this structure:
 {
   "tool_name": {
     "url": "https://mcp-tool-endpoint:8000/mcp",
-    "timeout": 30  // Optional: connect timeout in seconds
+    "timeout": 30,  // Optional: connect timeout in seconds (default: 30)
+    "propagate_headers": ["X-API-Key", "Authorization"]  // Optional: list of headers to propagate
+  }
+}
+```
+
+### Header Propagation
+
+You can configure which HTTP headers are passed from the incoming A2A request to each MCP server using the `propagate_headers` field. This provides fine-grained control over which headers each MCP server receives.
+
+**Key features:**
+- **Per-server configuration**: Each MCP server can receive different headers
+- **Security**: Headers are only sent to servers explicitly configured to receive them
+- **Case-insensitive matching**: Header names are matched case-insensitively
+- **Backward compatibility**: When `propagate_headers` is not specified, the legacy behavior is used (only `X-External-Token` is passed)
+
+**Example configuration:**
+```json5
+{
+  "github_api": {
+    "url": "https://github-mcp.example.com/mcp",
+    "propagate_headers": ["Authorization", "X-GitHub-Token"]
+  },
+  "stripe_api": {
+    "url": "https://stripe-mcp.example.com/mcp",
+    "propagate_headers": ["X-Stripe-Key"]
+  },
+  "public_tool": {
+    "url": "https://public-mcp.example.com/mcp"
+    // No propagate_headers - only X-External-Token will be passed (legacy behavior)
   }
 }
 ```
@@ -102,26 +131,44 @@ Body logging behavior:
 **Note**: Starlette body logging is more limited than HTTPX because it must avoid consuming request/response streams.
 Bodies are only captured when already buffered in the ASGI scope.
 
-## External API Token Passing
+## HTTP Header Propagation to MCP Tools
 
-The SDK supports passing external API tokens from A2A requests to MCP tools. This enables MCP servers to authenticate with external APIs on behalf of users.
+The SDK supports passing HTTP headers from A2A requests to MCP tools. This enables MCP servers to authenticate with external APIs on behalf of users, and provides flexible header-based configuration.
 
 ### How It Works
 
-1. **Token Capture**: When an A2A request includes the `X-External-Token` header, the SDK automatically captures and stores it in the ADK session state
-2. **Secure Storage**: The token is stored in ADK's session state (not in memory state accessible to the LLM), ensuring the agent cannot directly access or leak it
-3. **Automatic Injection**: When MCP tools are invoked, the SDK uses ADK's `header_provider` hook to retrieve the token from the session and inject it as the `X-External-Token` header in tool requests
+1. **Header Capture**: When an A2A request is received, all HTTP headers are captured and stored in the ADK session state
+2. **Secure Storage**: Headers are stored in ADK's session state (not in memory state accessible to the LLM), ensuring the agent cannot directly access or leak sensitive information
+3. **Per-Server Filtering**: Each MCP server receives only the headers configured in its `propagate_headers` list
+4. **Automatic Injection**: When MCP tools are invoked, the SDK uses ADK's `header_provider` hook to retrieve the configured headers from the session and inject them into tool requests
 
-**Current Limitations**: The token is only passed to MCP servers. Propagation to sub-agents is not currently supported due to ADK limitations in passing custom HTTP headers in A2A requests.
+### Configuration
+
+Configure which headers to propagate using the `propagate_headers` field in your MCP tool configuration:
+
+```json5
+{
+  "weather_api": {
+    "url": "https://weather-mcp.example.com/mcp",
+    "propagate_headers": ["X-API-Key", "X-User-Location"]
+  },
+  "database_tool": {
+    "url": "https://db-mcp.example.com/mcp",
+    "propagate_headers": ["Authorization"]
+  }
+}
+```
 
 ### Usage Example
 
-Simply include the `X-External-Token` header in your A2A requests:
+Include the headers you want to propagate in your A2A requests:
 
 ```bash
 curl -X POST http://localhost:8000/ \
   -H "Content-Type: application/json" \
-  -H "X-External-Token: your-api-token-here" \
+  -H "X-API-Key: your-api-key" \
+  -H "Authorization: Bearer your-token" \
+  -H "X-User-Location: US-West" \
   -d '{
     "jsonrpc": "2.0",
     "id": 1,
@@ -129,7 +176,7 @@ curl -X POST http://localhost:8000/ \
     "params": {
       "message": {
         "role": "user",
-        "parts": [{"kind": "text", "text": "Your message"}],
+        "parts": [{"kind": "text", "text": "What is the weather?"}],
         "messageId": "msg-123",
         "contextId": "ctx-123"
       }
@@ -137,7 +184,24 @@ curl -X POST http://localhost:8000/ \
   }'
 ```
 
-The SDK will automatically pass `your-api-token-here` to all MCP tool calls and sub-agent requests made during that session.
+Based on the configuration above:
+- `weather_api` MCP server will receive `X-API-Key` and `X-User-Location` headers
+- `database_tool` MCP server will receive only the `Authorization` header
+
+### Backward Compatibility
+
+For backward compatibility, if `propagate_headers` is not specified in the configuration, the SDK will use legacy behavior: only the `X-External-Token` header is passed to the MCP server.
+
+```json5
+{
+  "legacy_tool": {
+    "url": "https://legacy-mcp.example.com/mcp"
+    // No propagate_headers - only X-External-Token will be passed
+  }
+}
+```
+
+**Limitations**: Header propagation is only supported for MCP servers. Propagation to sub-agents is not currently supported due to ADK limitations in passing custom HTTP headers in A2A requests.
 
 ### Security Considerations
 
