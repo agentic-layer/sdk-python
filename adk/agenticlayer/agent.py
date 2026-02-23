@@ -82,15 +82,18 @@ def _create_header_provider(propagate_headers: list[str]) -> Callable[[ReadonlyC
         if not all_headers:
             return {}
 
+        # Create a lowercase lookup dictionary for O(n+m) complexity instead of O(n*m)
+        all_headers_lower = {k.lower(): (k, v) for k, v in all_headers.items()}
+
         # Filter to only include configured headers (case-insensitive matching)
         result_headers = {}
         for header_name in propagate_headers:
             # Try to find the header in the stored headers (case-insensitive)
-            for stored_header, value in all_headers.items():
-                if stored_header.lower() == header_name.lower():
-                    # Use the original case from the configuration
-                    result_headers[header_name] = value
-                    break
+            header_lower = header_name.lower()
+            if header_lower in all_headers_lower:
+                original_key, value = all_headers_lower[header_lower]
+                # Use the original case from the configuration
+                result_headers[header_name] = value
 
         return result_headers
 
