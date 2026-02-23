@@ -1,7 +1,7 @@
 """Integration test to verify MCP tool descriptions are included in agent instructions.
 
-This test reproduces the issue described in:
-https://github.com/agentic-layer/sdk-python/issues/XX
+This test reproduces the issue described in the GitHub issue about MCP tool descriptions
+not being contained in agent instructions.
 
 The problem: When MCP tools are added to an agent, their descriptions should be
 included in the agent's instructions so the LLM knows what each tool does. However,
@@ -210,9 +210,11 @@ class TestMcpToolDescriptions:
                 assert "add" in agent_instructions, "Tool name 'add' should be in instructions"
                 assert "multiply" in agent_instructions, "Tool name 'multiply' should be in instructions"
 
-                # The descriptions should also be present
-                assert "Add two numbers" in agent_instructions, "Tool description should be in instructions"
-                assert "Multiply two numbers" in agent_instructions, "Tool description should be in instructions"
+                # The full descriptions should be present
+                assert "Add two numbers together" in agent_instructions, (
+                    "Full tool description should be in instructions"
+                )
+                assert "Multiply two numbers" in agent_instructions, "Full tool description should be in instructions"
 
                 # The format should be similar to sub-agent descriptions
                 # (see agent.py lines 74-80 for reference)
