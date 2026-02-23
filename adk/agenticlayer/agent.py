@@ -3,6 +3,7 @@ Convert Sub Agents and Tools into RemoteA2aAgents, AgentTools and McpToolsets.
 """
 
 import logging
+from typing import Callable
 
 import httpx
 from a2a.client import A2ACardResolver
@@ -17,7 +18,7 @@ from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
 from httpx_retries import Retry, RetryTransport
 
 from agenticlayer.config import InteractionType, McpTool, SubAgent
-from agenticlayer.constants import EXTERNAL_TOKEN_SESSION_KEY
+from agenticlayer.constants import EXTERNAL_TOKEN_SESSION_KEY, HTTP_HEADERS_SESSION_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,45 @@ def _get_mcp_headers_from_session(readonly_context: ReadonlyContext) -> dict[str
         if external_token:
             return {"X-External-Token": external_token}
     return {}
+
+
+def _create_header_provider(propagate_headers: list[str]) -> Callable[[ReadonlyContext], dict[str, str]]:
+    """Create a header provider function for a specific MCP server.
+
+    This factory function creates a header provider that filters headers based on
+    the MCP server's configuration. Only headers listed in propagate_headers will
+    be included in requests to that server.
+
+    Args:
+        propagate_headers: List of header names to propagate to this MCP server
+
+    Returns:
+        A header provider function that can be passed to McpToolset
+    """
+
+    def header_provider(readonly_context: ReadonlyContext) -> dict[str, str]:
+        """Header provider that filters headers based on server configuration."""
+        if not readonly_context or not readonly_context.state:
+            return {}
+
+        # Get all stored headers from session
+        all_headers = readonly_context.state.get(HTTP_HEADERS_SESSION_KEY, {})
+        if not all_headers:
+            return {}
+
+        # Filter to only include configured headers (case-insensitive matching)
+        result_headers = {}
+        for header_name in propagate_headers:
+            # Try to find the header in the stored headers (case-insensitive)
+            for stored_header, value in all_headers.items():
+                if stored_header.lower() == header_name.lower():
+                    # Use the original case from the configuration
+                    result_headers[header_name] = value
+                    break
+
+        return result_headers
+
+    return header_provider
 
 
 class AgentFactory:
@@ -128,14 +168,23 @@ class AgentFactory:
         tools: list[ToolUnion] = []
         for tool in mcp_tools:
             logger.info(f"Loading tool {tool.model_dump_json()}")
+
+            # Use configured header provider if propagate_headers is specified,
+            # otherwise fall back to legacy behavior (x-external-token only)
+            if tool.propagate_headers:
+                header_provider = _create_header_provider(tool.propagate_headers)
+            else:
+                # Backward compatibility: use legacy provider that only sends x-external-token
+                header_provider = _get_mcp_headers_from_session
+
             tools.append(
                 McpToolset(
                     connection_params=StreamableHTTPConnectionParams(
                         url=str(tool.url),
                         timeout=tool.timeout,
                     ),
-                    # Provide header provider to inject session-stored token into tool requests
-                    header_provider=_get_mcp_headers_from_session,
+                    # Provide header provider to inject session-stored headers into tool requests
+                    header_provider=header_provider,
                 )
             )
 

@@ -31,7 +31,7 @@ from starlette.applications import Starlette
 from .agent import AgentFactory
 from .callback_tracer_plugin import CallbackTracerPlugin
 from .config import McpTool, SubAgent
-from .constants import EXTERNAL_TOKEN_SESSION_KEY
+from .constants import EXTERNAL_TOKEN_SESSION_KEY, HTTP_HEADERS_SESSION_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +51,10 @@ class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
         run_request: AgentRunRequest,
         runner: Runner,
     ) -> Session:
-        """Prepare the session and store the external token if present.
+        """Prepare the session and store HTTP headers if present.
 
-        This method extends the parent implementation to capture the X-External-Token
-        header from the request context and store it in the session state using ADK's
+        This method extends the parent implementation to capture HTTP headers
+        from the request context and store them in the session state using ADK's
         recommended approach: creating an Event with state_delta and appending it to
         the session.
 
@@ -64,25 +64,32 @@ class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
             runner: The ADK runner instance
 
         Returns:
-            The prepared session with the external token stored in its state
+            The prepared session with HTTP headers stored in its state
         """
         # Call parent to get or create the session
         session: Session = await super()._prepare_session(context, run_request, runner)
 
-        # Extract the X-External-Token header from the request context
+        # Extract HTTP headers from the request context
         # The call_context.state contains headers from the original HTTP request
         if context.call_context and "headers" in context.call_context.state:
             headers = context.call_context.state["headers"]
-            # Headers might be in different cases, check all variations
+
+            # Store all headers in session state for per-MCP-server filtering
+            # This allows each MCP server to receive only the headers it's configured to receive
+            if headers:
+                event = Event(
+                    author="system", actions=EventActions(state_delta={HTTP_HEADERS_SESSION_KEY: dict(headers)})
+                )
+                await runner.session_service.append_event(session, event)
+                logger.debug("Stored HTTP headers in session %s via state_delta", session.id)
+
+            # Keep backward compatibility: also store x-external-token separately
+            # This maintains existing behavior for code that expects EXTERNAL_TOKEN_SESSION_KEY
             external_token = (
                 headers.get("x-external-token") or headers.get("X-External-Token") or headers.get("X-EXTERNAL-TOKEN")
             )
 
             if external_token:
-                # Store the token in the session state using ADK's recommended method:
-                # Create an Event with a state_delta and append it to the session.
-                # This follows ADK's pattern for updating session state as documented at:
-                # https://google.github.io/adk-docs/sessions/state/#how-state-is-updated-recommended-methods
                 event = Event(
                     author="system", actions=EventActions(state_delta={EXTERNAL_TOKEN_SESSION_KEY: external_token})
                 )
