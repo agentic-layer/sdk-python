@@ -52,6 +52,19 @@ def _create_header_provider(propagate_headers: list[str]) -> Callable[[ReadonlyC
     the MCP server's configuration. Only headers listed in propagate_headers will
     be included in requests to that server.
 
+    The matching is case-insensitive: if the configuration specifies 'Authorization'
+    and the incoming request has 'authorization', they will match. The output header
+    will use the case specified in the configuration.
+
+    Example:
+        >>> provider = _create_header_provider(['Authorization', 'X-API-Key'])
+        >>> # If session has: {'authorization': 'Bearer token', 'x-api-key': 'key123'}
+        >>> # Output will be: {'Authorization': 'Bearer token', 'X-API-Key': 'key123'}
+
+    Note: If multiple headers with different casing match a single configured header
+    (e.g., both 'authorization' and 'Authorization' in stored headers), only one
+    will be included. The last match found will be used.
+
     Args:
         propagate_headers: List of header names to propagate to this MCP server
 
