@@ -151,13 +151,20 @@ class TestMcpToolDescriptions:
     ) -> None:
         """Test that documents the EXPECTED behavior: MCP tool descriptions should be in instructions.
 
-        This test is currently EXPECTED TO FAIL. It documents what the correct
+        This test is currently SKIPPED. It documents what the correct
         behavior should be once the issue is fixed.
 
         When the bug is fixed, this test should pass, and the agent instructions
         should contain the MCP tool descriptions, similar to how sub-agent
         descriptions are currently handled.
         """
+
+        # Mark this test as expected to fail - remove this when the issue is fixed
+        pytest.skip(
+            "This test documents expected behavior and will fail until the issue is fixed. "
+            "When MCP tool descriptions are properly added to agent instructions, "
+            "remove the pytest.skip() and this test should pass."
+        )
 
         # Given: MCP server with tools
         mcp = FastMCP("Calculator")
@@ -195,16 +202,6 @@ class TestMcpToolDescriptions:
                 print("=" * 80)
                 print(agent_instructions)
                 print("=" * 80)
-
-                # EXPECTED BEHAVIOR (will fail until bug is fixed):
-                # Tool names and descriptions should be in the instructions
-
-                # Mark this test as expected to fail
-                pytest.skip(
-                    "This test documents expected behavior and will fail until the issue is fixed. "
-                    "When MCP tool descriptions are properly added to agent instructions, "
-                    "remove the pytest.skip() and this test should pass."
-                )
 
                 # These assertions define the expected behavior:
                 assert "add" in agent_instructions, "Tool name 'add' should be in instructions"
