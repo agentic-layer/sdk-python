@@ -52,12 +52,12 @@ class TestMcpToolDescriptions:
         mcp = FastMCP("CustomerService")
 
         @mcp.tool()
-        def get_customer_crm_data(customer_id: str) -> dict:
+        def get_customer_crm_data(customer_id: str) -> dict[str, Any]:
             """Retrieve customer CRM data including contact info and purchase history."""
             return {"customer_id": customer_id, "name": "John Doe"}
 
         @mcp.tool()
-        def get_all_customer_data() -> list:
+        def get_all_customer_data() -> list[dict[str, str]]:
             """Get a list of all customers in the system."""
             return [{"id": "1", "name": "Customer 1"}]
 
@@ -67,17 +67,17 @@ class TestMcpToolDescriptions:
             return f"Message sent to {customer_id}"
 
         @mcp.tool()
-        def get_insurance_products() -> list:
+        def get_insurance_products() -> list[dict[str, str]]:
             """Get all available insurance products."""
             return [{"id": "prod1", "name": "Health Insurance"}]
 
         @mcp.tool()
-        def get_product_details(product_id: str) -> dict:
+        def get_product_details(product_id: str) -> dict[str, str]:
             """Get detailed information about a specific insurance product."""
             return {"id": product_id, "name": "Product Details"}
 
         @mcp.tool()
-        def get_products_by_segment(segment: str) -> list:
+        def get_products_by_segment(segment: str) -> list[dict[str, str]]:
             """Get insurance products filtered by customer segment."""
             return [{"id": "prod1", "segment": segment}]
 
