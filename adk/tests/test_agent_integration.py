@@ -26,6 +26,35 @@ from tests.utils.helpers import (
 setup_logging()
 
 
+def create_header_capturing_handler(mcp_manager: Any, base_url: str, headers_list: list[dict[str, str]]) -> Any:
+    """Create a handler that captures headers and forwards requests to an MCP app.
+
+    Args:
+        mcp_manager: The LifespanManager wrapping the MCP app
+        base_url: The base URL for the MCP server
+        headers_list: List to append captured headers to
+
+    Returns:
+        An async handler function for use with respx mocking
+    """
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        # Capture the headers from the request
+        headers_list.append(dict(request.headers))
+
+        # Forward to the MCP app
+        transport = httpx.ASGITransport(app=mcp_manager.app)
+        async with httpx.AsyncClient(transport=transport, base_url=base_url) as client:
+            return await client.request(
+                method=request.method,
+                url=str(request.url),
+                headers=request.headers,
+                content=request.content,
+            )
+
+    return handler
+
+
 class TestAgentIntegration:
     """Integration tests for agent configuration and behavior."""
 
@@ -389,23 +418,9 @@ class TestAgentIntegration:
         mcp_app = mcp.http_app(path="/mcp")
 
         async with LifespanManager(mcp_app) as mcp_manager:
-            # Create a custom handler that captures headers
-            async def handler_with_header_capture(request: httpx.Request) -> httpx.Response:
-                # Capture the headers from the request
-                received_headers.append(dict(request.headers))
-
-                # Forward to the MCP app
-                transport = httpx.ASGITransport(app=mcp_manager.app)
-                async with httpx.AsyncClient(transport=transport, base_url=mcp_server_url) as client:
-                    return await client.request(
-                        method=request.method,
-                        url=str(request.url),
-                        headers=request.headers,
-                        content=request.content,
-                    )
-
             # Route MCP requests through our custom handler
-            respx_mock.route(host="test-mcp-token.local").mock(side_effect=handler_with_header_capture)
+            handler = create_header_capturing_handler(mcp_manager, mcp_server_url, received_headers)
+            respx_mock.route(host="test-mcp-token.local").mock(side_effect=handler)
 
             # When: Create agent with MCP tool configured to propagate X-External-Token and send request with header
             test_agent = agent_factory("test_agent")
@@ -481,23 +496,9 @@ class TestAgentIntegration:
         mcp_app = mcp.http_app(path="/mcp")
 
         async with LifespanManager(mcp_app) as mcp_manager:
-            # Create a custom handler that captures headers
-            async def handler_with_header_capture(request: httpx.Request) -> httpx.Response:
-                # Capture the headers from the request
-                received_headers.append(dict(request.headers))
-
-                # Forward to the MCP app
-                transport = httpx.ASGITransport(app=mcp_manager.app)
-                async with httpx.AsyncClient(transport=transport, base_url=mcp_server_url) as client:
-                    return await client.request(
-                        method=request.method,
-                        url=str(request.url),
-                        headers=request.headers,
-                        content=request.content,
-                    )
-
             # Route MCP requests through our custom handler
-            respx_mock.route(host="test-multi-header.local").mock(side_effect=handler_with_header_capture)
+            handler = create_header_capturing_handler(mcp_manager, mcp_server_url, received_headers)
+            respx_mock.route(host="test-multi-header.local").mock(side_effect=handler)
 
             # When: Create agent with MCP tool configured to propagate multiple headers
             test_agent = agent_factory("test_agent")
@@ -602,22 +603,9 @@ class TestAgentIntegration:
         mcp2_app = mcp2.http_app(path="/mcp")
 
         async with LifespanManager(mcp1_app) as mcp1_manager, LifespanManager(mcp2_app) as mcp2_manager:
-            # Handlers for each server
-            async def handler1(request: httpx.Request) -> httpx.Response:
-                server1_headers.append(dict(request.headers))
-                transport = httpx.ASGITransport(app=mcp1_manager.app)
-                async with httpx.AsyncClient(transport=transport, base_url=mcp1_url) as client:
-                    return await client.request(
-                        method=request.method, url=str(request.url), headers=request.headers, content=request.content
-                    )
-
-            async def handler2(request: httpx.Request) -> httpx.Response:
-                server2_headers.append(dict(request.headers))
-                transport = httpx.ASGITransport(app=mcp2_manager.app)
-                async with httpx.AsyncClient(transport=transport, base_url=mcp2_url) as client:
-                    return await client.request(
-                        method=request.method, url=str(request.url), headers=request.headers, content=request.content
-                    )
+            # Create handlers for each server
+            handler1 = create_header_capturing_handler(mcp1_manager, mcp1_url, server1_headers)
+            handler2 = create_header_capturing_handler(mcp2_manager, mcp2_url, server2_headers)
 
             respx_mock.route(host="test-mcp1.local").mock(side_effect=handler1)
             respx_mock.route(host="test-mcp2.local").mock(side_effect=handler2)
@@ -711,19 +699,9 @@ class TestAgentIntegration:
         mcp_app = mcp.http_app(path="/mcp")
 
         async with LifespanManager(mcp_app) as mcp_manager:
-            # Create a custom handler that captures headers
-            async def handler_with_header_capture(request: httpx.Request) -> httpx.Response:
-                received_headers.append(dict(request.headers))
-                transport = httpx.ASGITransport(app=mcp_manager.app)
-                async with httpx.AsyncClient(transport=transport, base_url=mcp_server_url) as client:
-                    return await client.request(
-                        method=request.method,
-                        url=str(request.url),
-                        headers=request.headers,
-                        content=request.content,
-                    )
-
-            respx_mock.route(host="test-no-headers.local").mock(side_effect=handler_with_header_capture)
+            # Route MCP requests through our custom handler
+            handler = create_header_capturing_handler(mcp_manager, mcp_server_url, received_headers)
+            respx_mock.route(host="test-no-headers.local").mock(side_effect=handler)
 
             # When: Create agent with MCP tool with EXPLICITLY empty propagate_headers
             test_agent = agent_factory("test_agent")
