@@ -30,18 +30,15 @@ def _create_header_provider(propagate_headers: list[str]) -> Callable[[ReadonlyC
     the MCP server's configuration. Only headers listed in propagate_headers will
     be included in requests to that server.
 
-    The matching is case-insensitive: if the configuration specifies 'Authorization'
-    and the incoming request has 'authorization', they will match. The output header
-    will use the case specified in the configuration.
+    Headers are stored in the session state as flat primitive string keys of the form
+    ``f"{HTTP_HEADERS_SESSION_KEY}.{header_name_lower}"``. The provider looks up each
+    configured header by its lower-cased key and returns it with the casing specified
+    in the configuration.
 
     Example:
         >>> provider = _create_header_provider(['Authorization', 'X-API-Key'])
-        >>> # If session has: {'authorization': 'Bearer token', 'x-api-key': 'key123'}
+        >>> # Session state has: {'http_headers.authorization': 'Bearer token', '__http_headers__.x-api-key': 'key123'}
         >>> # Output will be: {'Authorization': 'Bearer token', 'X-API-Key': 'key123'}
-
-    Note: If multiple headers with different casing match a single configured header
-    (e.g., both 'authorization' and 'Authorization' in stored headers), only one
-    will be included. The last match found will be used.
 
     Args:
         propagate_headers: List of header names to propagate to this MCP server
@@ -51,26 +48,15 @@ def _create_header_provider(propagate_headers: list[str]) -> Callable[[ReadonlyC
     """
 
     def header_provider(readonly_context: ReadonlyContext) -> dict[str, str]:
-        """Header provider that filters headers based on server configuration."""
+        """Header provider that reads per-header flat primitive keys from session state."""
         if not readonly_context or not readonly_context.state:
             return {}
 
-        # Get all stored headers from session
-        all_headers = readonly_context.state.get(HTTP_HEADERS_SESSION_KEY, {})
-        if not all_headers:
-            return {}
-
-        # Create a lowercase lookup dictionary for O(n+m) complexity instead of O(n*m)
-        all_headers_lower = {k.lower(): (k, v) for k, v in all_headers.items()}
-
-        # Filter to only include configured headers (case-insensitive matching)
         result_headers = {}
         for header_name in propagate_headers:
-            # Try to find the header in the stored headers (case-insensitive)
-            header_lower = header_name.lower()
-            if header_lower in all_headers_lower:
-                original_key, value = all_headers_lower[header_lower]
-                # Use the original case from the configuration
+            key = f"{HTTP_HEADERS_SESSION_KEY}.{header_name.lower()}"
+            value = readonly_context.state.get(key)
+            if value is not None:
                 result_headers[header_name] = value
 
         return result_headers

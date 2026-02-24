@@ -5,7 +5,7 @@ This is an adaption of google.adk.a2a.utils.agent_to_a2a.
 
 import contextlib
 import logging
-from typing import AsyncIterator, Awaitable, Callable
+from typing import Any, AsyncIterator, Awaitable, Callable
 
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.apps import A2AStarletteApplication
@@ -40,10 +40,15 @@ class HeaderCapturingA2aAgentExecutor(A2aAgentExecutor):
     """Custom A2A agent executor that captures and stores HTTP headers.
 
     This executor extends the standard A2aAgentExecutor to intercept the request
-    and store all HTTP headers in the ADK session state. This allows MCP tools
-    to access headers via the header_provider hook, using ADK's built-in session
-    management rather than external context variables.
+    and store a filtered set of HTTP headers in the ADK session state. Only headers
+    that are configured to be propagated (across all MCP tools) are stored, avoiding
+    accidental capture of sensitive headers. Each header is stored as a separate flat
+    string entry (primitive type) to remain compatible with OpenTelemetry.
     """
+
+    def __init__(self, propagate_headers: set[str], **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._propagate_headers_lower = {h.lower() for h in propagate_headers}
 
     async def _prepare_session(
         self,
@@ -51,12 +56,12 @@ class HeaderCapturingA2aAgentExecutor(A2aAgentExecutor):
         run_request: AgentRunRequest,
         runner: Runner,
     ) -> Session:
-        """Prepare the session and store HTTP headers if present.
+        """Prepare the session and store filtered HTTP headers as flat primitive keys.
 
-        This method extends the parent implementation to capture HTTP headers
-        from the request context and store them in the session state using ADK's
-        recommended approach: creating an Event with state_delta and appending it to
-        the session.
+        Only headers listed in the configured propagate_headers set are stored.
+        Each header is stored as a separate string value under the key
+        ``f"{HTTP_HEADERS_SESSION_KEY}.{header_name_lower}"`` to keep session
+        state values as primitives (required by OpenTelemetry).
 
         Args:
             context: The A2A request context containing the call context with headers
@@ -64,24 +69,22 @@ class HeaderCapturingA2aAgentExecutor(A2aAgentExecutor):
             runner: The ADK runner instance
 
         Returns:
-            The prepared session with HTTP headers stored in its state
+            The prepared session with filtered HTTP headers stored in its state
         """
-        # Call parent to get or create the session
         session: Session = await super()._prepare_session(context, run_request, runner)
 
-        # Extract HTTP headers from the request context
-        # The call_context.state contains headers from the original HTTP request
-        if context.call_context and "headers" in context.call_context.state:
+        if self._propagate_headers_lower and context.call_context and "headers" in context.call_context.state:
             headers = context.call_context.state["headers"]
-
-            # Store all headers in session state for per-MCP-server filtering
-            # This allows each MCP server to receive only the headers it's configured to receive
             if headers:
-                event = Event(
-                    author="system", actions=EventActions(state_delta={HTTP_HEADERS_SESSION_KEY: dict(headers)})
-                )
-                await runner.session_service.append_event(session, event)
-                logger.debug("Stored HTTP headers in session %s via state_delta", session.id)
+                state_delta: dict[str, object] = {}
+                for key, value in headers.items():
+                    if key.lower() in self._propagate_headers_lower:
+                        state_delta[f"{HTTP_HEADERS_SESSION_KEY}.{key.lower()}"] = value
+
+                if state_delta:
+                    event = Event(author="system", actions=EventActions(state_delta=state_delta))
+                    await runner.session_service.append_event(session, event)
+                    logger.debug("Stored %d HTTP headers in session %s via state_delta", len(state_delta), session.id)
 
         return session
 
@@ -92,12 +95,17 @@ class HealthCheckFilter(logging.Filter):
         return record.getMessage().find(AGENT_CARD_WELL_KNOWN_PATH) == -1
 
 
-async def create_a2a_app(agent: BaseAgent, rpc_url: str) -> A2AStarletteApplication:
+async def create_a2a_app(
+    agent: BaseAgent, rpc_url: str, propagate_headers: set[str] | None = None
+) -> A2AStarletteApplication:
     """Create an A2A Starlette application from an ADK agent.
 
     Args:
         agent: The ADK agent to convert
         rpc_url: The URL where the agent will be available for A2A communication
+        propagate_headers: Union of all header names that any MCP tool is configured to
+            propagate. Only these headers will be captured from incoming requests and
+            stored in the session state.
     Returns:
         An A2AStarletteApplication instance
     """
@@ -122,6 +130,7 @@ async def create_a2a_app(agent: BaseAgent, rpc_url: str) -> A2AStarletteApplicat
     # Use custom executor that captures HTTP headers and stores in session
     agent_executor = HeaderCapturingA2aAgentExecutor(
         runner=create_runner,
+        propagate_headers=propagate_headers or set(),
     )
 
     request_handler = DefaultRequestHandler(agent_executor=agent_executor, task_store=task_store)
@@ -175,6 +184,7 @@ def to_a2a(
     """
 
     agent_factory = agent_factory or AgentFactory()
+    all_propagate_headers = {h for tool in (tools or []) for h in tool.propagate_headers}
 
     async def a2a_app_creator() -> A2AStarletteApplication:
         configured_agent = await agent_factory.load_agent(
@@ -182,7 +192,7 @@ def to_a2a(
             sub_agents=sub_agents or [],
             tools=tools or [],
         )
-        return await create_a2a_app(configured_agent, rpc_url)
+        return await create_a2a_app(configured_agent, rpc_url, propagate_headers=all_propagate_headers)
 
     return to_starlette(a2a_app_creator)
 

@@ -59,6 +59,8 @@ filterwarnings = [
     "ignore::DeprecationWarning:litellm.*",
     "ignore::DeprecationWarning:a2a.*",
     "ignore::UserWarning:agenticlayer.*",
+    # google-adk uses the deprecated streamablehttp_client from mcp; suppress until upstream fixes it
+    "ignore:Use `streamable_http_client` instead.:DeprecationWarning",
 ]
 
 
