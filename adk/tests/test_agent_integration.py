@@ -407,9 +407,16 @@ class TestAgentIntegration:
             # Route MCP requests through our custom handler
             respx_mock.route(host="test-mcp-token.local").mock(side_effect=handler_with_header_capture)
 
-            # When: Create agent with MCP tool and send request with X-External-Token header
+            # When: Create agent with MCP tool configured to propagate X-External-Token and send request with header
             test_agent = agent_factory("test_agent")
-            tools = [McpTool(name="verifier", url=AnyHttpUrl(f"{mcp_server_url}/mcp"), timeout=30)]
+            tools = [
+                McpTool(
+                    name="verifier",
+                    url=AnyHttpUrl(f"{mcp_server_url}/mcp"),
+                    timeout=30,
+                    propagate_headers=["X-External-Token"],
+                )
+            ]
             external_token = "secret-api-token-12345"  # nosec B105
 
             async with app_factory(test_agent, tools=tools) as app:
@@ -672,90 +679,6 @@ class TestAgentIntegration:
                 # Should NOT have server1's headers
                 assert "x-server1-token" not in headers_lower
                 assert "x-common-header" not in headers_lower
-
-    @pytest.mark.asyncio
-    async def test_backward_compatibility_no_propagate_headers(
-        self,
-        app_factory: Any,
-        agent_factory: Any,
-        llm_controller: LLMMockController,
-        respx_mock: respx.MockRouter,
-    ) -> None:
-        """Test backward compatibility: when propagate_headers is not set, X-External-Token is still passed."""
-
-        # Given: Mock LLM to call 'echo' tool
-        llm_controller.respond_with_tool_call(
-            pattern="",
-            tool_name="echo",
-            tool_args={"message": "test"},
-            final_message="Echo completed!",
-        )
-
-        # Given: MCP server
-        mcp = FastMCP("BackwardCompatVerifier")
-        received_headers: list[dict[str, str]] = []
-
-        @mcp.tool()
-        def echo(message: str) -> str:
-            """Echo a message."""
-            return f"Echoed: {message}"
-
-        mcp_server_url = "http://test-backward-compat.local"
-        mcp_app = mcp.http_app(path="/mcp")
-
-        async with LifespanManager(mcp_app) as mcp_manager:
-            # Create a custom handler that captures headers
-            async def handler_with_header_capture(request: httpx.Request) -> httpx.Response:
-                received_headers.append(dict(request.headers))
-                transport = httpx.ASGITransport(app=mcp_manager.app)
-                async with httpx.AsyncClient(transport=transport, base_url=mcp_server_url) as client:
-                    return await client.request(
-                        method=request.method,
-                        url=str(request.url),
-                        headers=request.headers,
-                        content=request.content,
-                    )
-
-            respx_mock.route(host="test-backward-compat.local").mock(side_effect=handler_with_header_capture)
-
-            # When: Create agent with MCP tool WITHOUT propagate_headers config
-            test_agent = agent_factory("test_agent")
-            tools = [
-                McpTool(
-                    name="verifier",
-                    url=AnyHttpUrl(f"{mcp_server_url}/mcp"),
-                    timeout=30,
-                    # No propagate_headers specified - should use legacy behavior
-                )
-            ]
-            external_token = "legacy-token-12345"  # nosec B105
-
-            async with app_factory(test_agent, tools=tools) as app:
-                client = TestClient(app)
-                response = client.post(
-                    "",
-                    json=create_send_message_request("Test message"),
-                    headers={
-                        "X-External-Token": external_token,
-                        "X-Other-Header": "should-not-be-sent",
-                    },
-                )
-
-            # Then: Verify response is successful
-            assert response.status_code == 200
-            result = verify_jsonrpc_response(response.json())
-            assert result["status"]["state"] == "completed", "Task should complete successfully"
-
-            # Then: Verify X-External-Token was passed (legacy behavior)
-            assert len(received_headers) > 0, "MCP server should have received requests"
-            tool_call_headers = [h for h in received_headers if "x-external-token" in h or "X-External-Token" in h]
-            assert len(tool_call_headers) > 0, "At least one request should have X-External-Token header"
-
-            for headers in tool_call_headers:
-                headers_lower = {k.lower(): v for k, v in headers.items()}
-                assert headers_lower.get("x-external-token") == external_token
-                # Other headers should NOT be passed
-                assert "x-other-header" not in headers_lower
 
     @pytest.mark.asyncio
     async def test_explicitly_empty_propagate_headers_sends_no_headers(

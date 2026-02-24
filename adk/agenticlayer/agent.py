@@ -18,31 +18,9 @@ from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
 from httpx_retries import Retry, RetryTransport
 
 from agenticlayer.config import InteractionType, McpTool, SubAgent
-from agenticlayer.constants import EXTERNAL_TOKEN_SESSION_KEY, HTTP_HEADERS_SESSION_KEY
+from agenticlayer.constants import HTTP_HEADERS_SESSION_KEY
 
 logger = logging.getLogger(__name__)
-
-
-def _get_mcp_headers_from_session(readonly_context: ReadonlyContext) -> dict[str, str]:
-    """Header provider function for MCP tools that retrieves token from ADK session.
-
-    This function is called by the ADK when MCP tools are invoked. It reads the
-    external token from the session state where it was stored during request
-    processing by TokenCapturingA2aAgentExecutor.
-
-    Args:
-        readonly_context: The ADK ReadonlyContext providing access to the session
-
-    Returns:
-        A dictionary of headers to include in MCP tool requests.
-        If a token is stored in the session, includes it in the headers.
-    """
-    # Access the session state directly from the readonly context
-    if readonly_context and readonly_context.state:
-        external_token = readonly_context.state.get(EXTERNAL_TOKEN_SESSION_KEY)
-        if external_token:
-            return {"X-External-Token": external_token}
-    return {}
 
 
 def _create_header_provider(propagate_headers: list[str]) -> Callable[[ReadonlyContext], dict[str, str]]:
@@ -185,13 +163,8 @@ class AgentFactory:
         for tool in mcp_tools:
             logger.info(f"Loading tool {tool.model_dump_json()}")
 
-            # Use configured header provider if propagate_headers is specified,
-            # otherwise fall back to legacy behavior (x-external-token only)
-            if tool.propagate_headers is not None:
-                header_provider = _create_header_provider(tool.propagate_headers)
-            else:
-                # Backward compatibility: use legacy provider that only sends x-external-token
-                header_provider = _get_mcp_headers_from_session
+            # Create header provider with configured headers
+            header_provider = _create_header_provider(tool.propagate_headers)
 
             tools.append(
                 McpToolset(

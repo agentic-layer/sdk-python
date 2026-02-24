@@ -73,7 +73,7 @@ The JSON configuration for `AGENT_TOOLS` should follow this structure:
   "tool_name": {
     "url": "https://mcp-tool-endpoint:8000/mcp",
     "timeout": 30,  // Optional: connect timeout in seconds (default: 30)
-    "propagate_headers": ["X-API-Key", "Authorization"]  // Optional: list of headers to propagate
+    "propagate_headers": ["X-API-Key", "Authorization"]  // Optional: list of headers to propagate (default: [])
   }
 }
 ```
@@ -86,7 +86,7 @@ You can configure which HTTP headers are passed from the incoming A2A request to
 - **Per-server configuration**: Each MCP server can receive different headers
 - **Security**: Headers are only sent to servers explicitly configured to receive them
 - **Case-insensitive matching**: Header names are matched case-insensitively
-- **Backward compatibility**: When `propagate_headers` is not specified, the legacy behavior is used (only `X-External-Token` is passed)
+- **Default behavior**: When `propagate_headers` is not specified or is empty, no headers are passed
 
 **Example configuration:**
 ```json5
@@ -101,7 +101,7 @@ You can configure which HTTP headers are passed from the incoming A2A request to
   },
   "public_tool": {
     "url": "https://public-mcp.example.com/mcp"
-    // No propagate_headers - only X-External-Token will be passed (legacy behavior)
+    // No propagate_headers - no headers will be passed
   }
 }
 ```
@@ -188,24 +188,11 @@ Based on the configuration above:
 - `weather_api` MCP server will receive `X-API-Key` and `X-User-Location` headers
 - `database_tool` MCP server will receive only the `Authorization` header
 
-### Backward Compatibility
-
-For backward compatibility, if `propagate_headers` is not specified in the configuration, the SDK will use legacy behavior: only the `X-External-Token` header is passed to the MCP server.
-
-```json5
-{
-  "legacy_tool": {
-    "url": "https://legacy-mcp.example.com/mcp"
-    // No propagate_headers - only X-External-Token will be passed
-  }
-}
-```
-
 **Limitations**: Header propagation is only supported for MCP servers. Propagation to sub-agents is not currently supported due to ADK limitations in passing custom HTTP headers in A2A requests.
 
 ### Security Considerations
 
-- Tokens are stored in ADK session state (separate from memory state that the LLM can access)
-- Tokens are not directly accessible to agent code through normal session state queries
-- Tokens persist for the session duration and are managed by ADK's session lifecycle
+- Headers are stored in ADK session state (separate from memory state that the LLM can access)
+- Headers are not directly accessible to agent code through normal session state queries
+- Headers persist for the session duration and are managed by ADK's session lifecycle
 - This is a simple authentication mechanism; for production use, consider implementing more sophisticated authentication and authorization schemes
