@@ -19,9 +19,6 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
 _logger = logging.getLogger(__name__)
 
-_MAX_BODY_SIZE = 100 * 1024  # 100KB
-_capture_http_bodies = False  # Set by setup_otel()
-
 
 def _is_text_content(content_type: str) -> bool:
     """Check if content type is text-based and safe to log."""
@@ -29,25 +26,13 @@ def _is_text_content(content_type: str) -> bool:
     return any(ct in content_type.lower() for ct in text_types)
 
 
-def _truncate_body(body: bytes) -> str:
-    """Safely truncate and decode body to string, limiting size."""
-    if len(body) > _MAX_BODY_SIZE:
-        body = body[:_MAX_BODY_SIZE]
-    try:
-        decoded = body.decode("utf-8", errors="replace")
-        if len(body) == _MAX_BODY_SIZE:
-            decoded += f"\n... [truncated, exceeded {_MAX_BODY_SIZE} bytes]"
-        return decoded
-    except Exception:
-        _logger.exception("Failed to decode body content")
-        return "[body decoding failed]"
+def _decode_body(body: bytes) -> str:
+    """Decode body bytes to string."""
+    return body.decode("utf-8", errors="replace")
 
 
 def request_hook(span: trace.Span, request: httpx.Request) -> None:
-    """Hook to capture request body in traces if enabled."""
-    if not _capture_http_bodies:
-        return
-
+    """Hook to log request body at DEBUG level."""
     try:
         # Skip streaming requests to avoid consuming the stream
         if hasattr(request, "stream") and request.stream is not None:
@@ -55,41 +40,27 @@ def request_hook(span: trace.Span, request: httpx.Request) -> None:
 
         content_type = request.headers.get("content-type", "")
         if _is_text_content(content_type) and hasattr(request, "content") and request.content:
-            span.set_attribute("http.request.body", _truncate_body(request.content))
+            _logger.debug("HTTP request body: %s", _decode_body(request.content))
     except Exception:
-        _logger.exception("Failed to capture request body in trace")
+        _logger.exception("Failed to log request body")
 
 
 def response_hook(span: trace.Span, request: httpx.Request, response: httpx.Response) -> None:
-    """Hook to capture response body in traces if enabled."""
-    if not _capture_http_bodies:
-        return
-
+    """Hook to log response body at DEBUG level."""
     try:
         # Skip streaming responses to avoid consuming the stream
-        # Check both the is_stream_consumed flag and if stream is still active
         if hasattr(response, "is_stream_consumed") and not response.is_stream_consumed:
             return
 
         content_type = response.headers.get("content-type", "")
         if _is_text_content(content_type) and hasattr(response, "content") and response.content:
-            span.set_attribute("http.response.body", _truncate_body(response.content))
+            _logger.debug("HTTP response body: %s", _decode_body(response.content))
     except Exception:
-        _logger.exception("Failed to capture response body in trace")
+        _logger.exception("Failed to log response body")
 
 
-def setup_otel(capture_http_bodies: bool = False) -> None:
-    """Set up OpenTelemetry tracing, logging and metrics.
-
-    Args:
-        capture_http_bodies: Enable capturing HTTP request/response bodies in traces.
-            Only text-based content types are logged, truncated to 100KB.
-            Streaming requests/responses are skipped to avoid consuming streams.
-            Defaults to False for security/privacy reasons.
-    """
-    global _capture_http_bodies
-    _capture_http_bodies = capture_http_bodies
-
+def setup_otel() -> None:
+    """Set up OpenTelemetry tracing, logging and metrics."""
     # Set log level for urllib to WARNING to reduce noise (like sending logs to OTLP)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 

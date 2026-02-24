@@ -8,20 +8,17 @@ from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from opentelemetry import trace
 from starlette.applications import Starlette
 
-from .otel import _capture_http_bodies, _is_text_content, _truncate_body
+from .otel import _decode_body, _is_text_content
 
 _logger = logging.getLogger(__name__)
 
 
 def _starlette_server_request_hook(span: trace.Span, scope: Dict[str, Any]) -> None:
-    """Hook to capture Starlette request body in traces if enabled.
+    """Hook to log Starlette request body at DEBUG level if enabled.
 
     Note: This captures the body from the ASGI scope's cached body if available.
     It does not consume the request stream to avoid breaking request handling.
     """
-
-    if not _capture_http_bodies:
-        return
 
     try:
         # Only process HTTP requests
@@ -38,19 +35,13 @@ def _starlette_server_request_hook(span: trace.Span, scope: Dict[str, Any]) -> N
                 content_type = headers.get(b"content-type", b"").decode("latin1")
 
                 if _is_text_content(content_type):
-                    span.set_attribute("http.request.body", _truncate_body(body))
+                    _logger.debug("Starlette request body: %s", _decode_body(body))
     except Exception:
-        _logger.exception("Failed to capture Starlette request body in trace")
+        _logger.exception("Failed to log Starlette request body")
 
 
 def _starlette_client_request_hook(span: trace.Span, scope: Dict[str, Any], message: Dict[str, Any]) -> None:
-    """Hook to capture Starlette client request body in traces if enabled."""
-    # Import here to avoid circular dependency
-    from .otel import _capture_http_bodies, _is_text_content, _truncate_body
-
-    if not _capture_http_bodies:
-        return
-
+    """Hook to log Starlette client request body at DEBUG level if enabled."""
     try:
         # Capture body from the message if available and it's the body message
         if message.get("type") == "http.request" and "body" in message:
@@ -61,27 +52,22 @@ def _starlette_client_request_hook(span: trace.Span, scope: Dict[str, Any], mess
                 content_type = headers.get(b"content-type", b"").decode("latin1")
 
                 if _is_text_content(content_type):
-                    span.set_attribute("http.request.body", _truncate_body(body))
+                    _logger.debug("Starlette client request body: %s", _decode_body(body))
     except Exception:
-        _logger.exception("Failed to capture Starlette client request body in trace")
+        _logger.exception("Failed to log Starlette client request body")
 
 
 def _starlette_client_response_hook(span: trace.Span, scope: Dict[str, Any], message: Dict[str, Any]) -> None:
-    """Hook to capture Starlette client response body in traces if enabled."""
-
-    if not _capture_http_bodies:
-        return
+    """Hook to log Starlette client response body at DEBUG level if enabled."""
 
     try:
         # Capture body from response message
         if message.get("type") == "http.response.body" and "body" in message:
             body = message["body"]
             if body:
-                # We don't have easy access to response headers here
-                # Could try to get from span attributes if set earlier
-                span.set_attribute("http.response.body", _truncate_body(body))
+                _logger.debug("Starlette client response body: %s", _decode_body(body))
     except Exception:
-        _logger.exception("Failed to capture Starlette client response body in trace")
+        _logger.exception("Failed to log Starlette client response body")
 
 
 def instrument_starlette_app(app: Starlette) -> None:
@@ -91,7 +77,6 @@ def instrument_starlette_app(app: Starlette) -> None:
         app: The Starlette application to instrument
 
     Note:
-        Body logging is controlled by the enable_body_logging parameter passed to setup_otel().
         This should be called after setup_otel() has been called to set up the tracer provider.
         Body logging for Starlette is limited compared to HTTPX as it must avoid consuming
         request/response streams. Bodies are only captured when already buffered in the ASGI scope.
