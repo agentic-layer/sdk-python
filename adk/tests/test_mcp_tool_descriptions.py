@@ -17,6 +17,7 @@ Actual behavior:
 - Tools are available but LLM doesn't know what they do without explicit prompts
 """
 
+import logging
 from typing import Any
 
 import pytest
@@ -25,8 +26,10 @@ from agenticlayer.config import McpTool
 from asgi_lifespan import LifespanManager
 from fastmcp import FastMCP
 from pydantic import AnyHttpUrl
+from starlette.testclient import TestClient
 
-from tests.utils.helpers import create_asgi_request_handler
+from tests.fixtures.mock_llm import LLMMockController
+from tests.utils.helpers import create_asgi_request_handler, create_send_message_request
 
 
 class TestMcpToolDescriptions:
@@ -37,16 +40,29 @@ class TestMcpToolDescriptions:
         self,
         app_factory: Any,
         agent_factory: Any,
+        llm_controller: LLMMockController,
         respx_mock: respx.MockRouter,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Test that reproduces the issue: MCP tool descriptions are not in agent instructions.
+        """Test that reproduces the issue: MCP tool descriptions are not in the logged functions.
 
         This test demonstrates that when MCP tools are added to an agent, their
-        descriptions are NOT included in the agent's instructions, making it harder
-        for the LLM to know what tools are available and how to use them.
+        descriptions are NOT included in the function logs that the ADK generates.
 
-        This is the ACTUAL behavior (the bug we're documenting).
+        The ADK logs functions in this format:
+        Functions:
+        get_customer_crm_data: {'customer_id': {'title': 'Customer Id', 'type': <Type.STRING: 'STRING'>}} -> None
+
+        Notice that the description ("Retrieve customer CRM data...") is MISSING.
+        This is the bug reproduced from the GitHub issue.
         """
+
+        # Enable DEBUG logging to capture the function logs
+        # Need to set it at the root level to capture all ADK logs
+        caplog.set_level(logging.DEBUG)
+
+        # Configure LLM to respond with a simple message
+        llm_controller.respond_with_message("", "I can help you with customer service tasks.")
 
         # Given: MCP server with tools that have detailed descriptions
         mcp = FastMCP("CustomerService")
@@ -92,55 +108,66 @@ class TestMcpToolDescriptions:
 
             # When: Create agent with MCP tools
             test_agent = agent_factory("customer_service_agent")
-            # Set a simple instruction
             test_agent.instruction = "You are a customer service agent."
 
             tools = [McpTool(name="crm_tools", url=AnyHttpUrl(f"{mcp_server_url}/mcp"), timeout=30)]
 
-            # Create the app which loads the MCP tools
-            async with app_factory(test_agent, tools=tools):
-                # Access the agent to check its instructions
-                # The agent is modified during app startup in agent_factory.load_agent()
-                # We need to get the configured agent instance
+            # Create the app and send a message to trigger LLM call with logging
+            async with app_factory(test_agent, tools=tools) as app:
+                client = TestClient(app)
+                user_message = "What can you help me with?"
+                response = client.post("", json=create_send_message_request(user_message))
 
-                # ACTUAL BEHAVIOR (the bug):
-                # The agent instructions do NOT contain the MCP tool descriptions
-                agent_instructions = test_agent.instruction
+            # Then: Verify we got a successful response
+            assert response.status_code == 200
 
-                print("\n" + "=" * 80)
-                print("AGENT INSTRUCTIONS:")
-                print("=" * 80)
-                print(agent_instructions)
-                print("=" * 80)
+            # Find the "Functions:" section in the logs
+            functions_log = None
+            for record in caplog.records:
+                if "Functions:" in record.message:
+                    functions_log = record.message
+                    break
 
-                # These assertions document the CURRENT (buggy) behavior:
-                # The tool descriptions are NOT present in the instructions
+            assert functions_log is not None, "Should have logged functions"
 
-                # Check that the basic instruction is still there
-                assert "customer service agent" in agent_instructions.lower()
+            print("\n" + "=" * 80)
+            print("LOGGED FUNCTIONS (from ADK debug logs):")
+            print("=" * 80)
+            print(functions_log)
+            print("=" * 80)
 
-                # DOCUMENT THE BUG: Tool descriptions are missing
-                # If this were working correctly, we would expect to see something like:
-                # "Following tools are available:
-                #  - 'get_customer_crm_data': Retrieve customer CRM data...
-                #  - 'send_message': Send a personalized message..."
-                # But these are NOT present currently.
+            # DOCUMENT THE BUG: The logged functions contain the exact format from the issue
+            # Functions should be logged like:
+            # get_customer_crm_data: {'customer_id': {'title': 'Customer Id', 'type': <Type.STRING: 'STRING'>}} -> None
 
-                assert "get_customer_crm_data" not in agent_instructions, (
-                    "Tool names should NOT be in instructions yet (this documents the bug). "
-                    "If this assertion fails, the issue might be fixed!"
-                )
-                assert "Retrieve customer CRM data" not in agent_instructions, (
-                    "Tool descriptions should NOT be in instructions yet (this documents the bug). "
-                    "If this assertion fails, the issue might be fixed!"
-                )
-                assert "send_message" not in agent_instructions, (
-                    "Tool names should NOT be in instructions yet (this documents the bug)"
-                )
+            # Verify the bug - function names are present
+            assert "get_customer_crm_data" in functions_log, "Function name should be in log"
+            assert "send_message" in functions_log, "Function name should be in log"
+            assert "get_insurance_products" in functions_log, "Function name should be in log"
 
-                # When the issue is fixed, the agent instructions should include
-                # tool descriptions similar to how sub-agent descriptions are added
-                # in agent.py lines 74-80
+            # BUG: The descriptions are MISSING from the log
+            # The log shows parameter types but not the human-readable descriptions
+            assert "Retrieve customer CRM data including contact info and purchase history" not in functions_log, (
+                "Tool description should NOT be in log (this documents the bug). "
+                "If this assertion fails, the issue might be fixed!"
+            )
+            assert "Get a list of all customers in the system" not in functions_log, (
+                "Tool description should NOT be in log (this documents the bug)"
+            )
+            assert "Send a personalized message to a customer via email" not in functions_log, (
+                "Tool description should NOT be in log (this documents the bug)"
+            )
+
+            # The log shows parameter information (like 'customer_id') but not descriptions
+            assert "customer_id" in functions_log, "Parameter names should be in log"
+
+            print("\n" + "=" * 80)
+            print("BUG REPRODUCED: Functions logged without their descriptions!")
+            print("The log shows function signatures like:")
+            print("  get_customer_crm_data: {'customer_id': ...} -> None")
+            print("But missing the description:")
+            print("  'Retrieve customer CRM data including contact info and purchase history.'")
+            print("=" * 80)
 
     @pytest.mark.asyncio
     async def test_mcp_tool_descriptions_expected_behavior(
