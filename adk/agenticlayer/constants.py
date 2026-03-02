@@ -1,4 +1,6 @@
 """Constants shared across the agenticlayer package."""
 
-# Key used to store the external token in the ADK session state
-EXTERNAL_TOKEN_SESSION_KEY = "__external_token__"  # nosec B105
+# Prefix used to store propagated HTTP headers in ADK session state as flat primitive keys.
+# Each header is stored as a separate string entry: f"{HTTP_HEADERS_SESSION_KEY}.{header_name_lower}"
+# e.g. "http_headers.authorization" -> "Bearer token"
+HTTP_HEADERS_SESSION_KEY = "http_headers"

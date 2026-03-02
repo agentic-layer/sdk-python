@@ -3,6 +3,7 @@ Convert Sub Agents and Tools into RemoteA2aAgents, AgentTools and McpToolsets.
 """
 
 import logging
+from typing import Callable
 
 import httpx
 from a2a.client import A2ACardResolver
@@ -17,31 +18,50 @@ from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
 from httpx_retries import Retry, RetryTransport
 
 from agenticlayer.config import InteractionType, McpTool, SubAgent
-from agenticlayer.constants import EXTERNAL_TOKEN_SESSION_KEY
+from agenticlayer.constants import HTTP_HEADERS_SESSION_KEY
 
 logger = logging.getLogger(__name__)
 
 
-def _get_mcp_headers_from_session(readonly_context: ReadonlyContext) -> dict[str, str]:
-    """Header provider function for MCP tools that retrieves token from ADK session.
+def _create_header_provider(propagate_headers: list[str]) -> Callable[[ReadonlyContext], dict[str, str]]:
+    """Create a header provider function for a specific MCP server.
 
-    This function is called by the ADK when MCP tools are invoked. It reads the
-    external token from the session state where it was stored during request
-    processing by TokenCapturingA2aAgentExecutor.
+    This factory function creates a header provider that filters headers based on
+    the MCP server's configuration. Only headers listed in propagate_headers will
+    be included in requests to that server.
+
+    Headers are stored in the session state as flat primitive string keys of the form
+    ``f"{HTTP_HEADERS_SESSION_KEY}.{header_name_lower}"``. The provider looks up each
+    configured header by its lower-cased key and returns it with the casing specified
+    in the configuration.
+
+    Example:
+        >>> provider = _create_header_provider(['Authorization', 'X-API-Key'])
+        >>> # Session state has: {'http_headers.authorization': 'Bearer token', '__http_headers__.x-api-key': 'key123'}
+        >>> # Output will be: {'Authorization': 'Bearer token', 'X-API-Key': 'key123'}
 
     Args:
-        readonly_context: The ADK ReadonlyContext providing access to the session
+        propagate_headers: List of header names to propagate to this MCP server
 
     Returns:
-        A dictionary of headers to include in MCP tool requests.
-        If a token is stored in the session, includes it in the headers.
+        A header provider function that can be passed to McpToolset
     """
-    # Access the session state directly from the readonly context
-    if readonly_context and readonly_context.state:
-        external_token = readonly_context.state.get(EXTERNAL_TOKEN_SESSION_KEY)
-        if external_token:
-            return {"X-External-Token": external_token}
-    return {}
+
+    def header_provider(readonly_context: ReadonlyContext) -> dict[str, str]:
+        """Header provider that reads per-header flat primitive keys from session state."""
+        if not readonly_context or not readonly_context.state:
+            return {}
+
+        result_headers = {}
+        for header_name in propagate_headers:
+            key = f"{HTTP_HEADERS_SESSION_KEY}.{header_name.lower()}"
+            value = readonly_context.state.get(key)
+            if value is not None:
+                result_headers[header_name] = value
+
+        return result_headers
+
+    return header_provider
 
 
 class AgentFactory:
@@ -128,14 +148,18 @@ class AgentFactory:
         tools: list[ToolUnion] = []
         for tool in mcp_tools:
             logger.info(f"Loading tool {tool.model_dump_json()}")
+
+            # Create header provider with configured headers
+            header_provider = _create_header_provider(tool.propagate_headers)
+
             tools.append(
                 McpToolset(
                     connection_params=StreamableHTTPConnectionParams(
                         url=str(tool.url),
                         timeout=tool.timeout,
                     ),
-                    # Provide header provider to inject session-stored token into tool requests
-                    header_provider=_get_mcp_headers_from_session,
+                    # Provide header provider to inject session-stored headers into tool requests
+                    header_provider=header_provider,
                 )
             )
 

@@ -5,7 +5,7 @@ This is an adaption of google.adk.a2a.utils.agent_to_a2a.
 
 import contextlib
 import logging
-from typing import AsyncIterator, Awaitable, Callable
+from typing import Any, AsyncIterator, Awaitable, Callable
 
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.apps import A2AStarletteApplication
@@ -31,19 +31,24 @@ from starlette.applications import Starlette
 from .agent import AgentFactory
 from .callback_tracer_plugin import CallbackTracerPlugin
 from .config import McpTool, SubAgent
-from .constants import EXTERNAL_TOKEN_SESSION_KEY
+from .constants import HTTP_HEADERS_SESSION_KEY
 
 logger = logging.getLogger(__name__)
 
 
-class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
-    """Custom A2A agent executor that captures and stores the X-External-Token header.
+class HeaderCapturingA2aAgentExecutor(A2aAgentExecutor):
+    """Custom A2A agent executor that captures and stores HTTP headers.
 
     This executor extends the standard A2aAgentExecutor to intercept the request
-    and store the X-External-Token header in the ADK session state. This allows
-    MCP tools to access the token via the header_provider hook, using ADK's
-    built-in session management rather than external context variables.
+    and store a filtered set of HTTP headers in the ADK session state. Only headers
+    that are configured to be propagated (across all MCP tools) are stored, avoiding
+    accidental capture of sensitive headers. Each header is stored as a separate flat
+    string entry (primitive type) to remain compatible with OpenTelemetry.
     """
+
+    def __init__(self, propagate_headers: set[str], **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._propagate_headers_lower = {h.lower() for h in propagate_headers}
 
     async def _prepare_session(
         self,
@@ -51,12 +56,12 @@ class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
         run_request: AgentRunRequest,
         runner: Runner,
     ) -> Session:
-        """Prepare the session and store the external token if present.
+        """Prepare the session and store filtered HTTP headers as flat primitive keys.
 
-        This method extends the parent implementation to capture the X-External-Token
-        header from the request context and store it in the session state using ADK's
-        recommended approach: creating an Event with state_delta and appending it to
-        the session.
+        Only headers listed in the configured propagate_headers set are stored.
+        Each header is stored as a separate string value under the key
+        ``f"{HTTP_HEADERS_SESSION_KEY}.{header_name_lower}"`` to keep session
+        state values as primitives (required by OpenTelemetry).
 
         Args:
             context: The A2A request context containing the call context with headers
@@ -64,30 +69,22 @@ class TokenCapturingA2aAgentExecutor(A2aAgentExecutor):
             runner: The ADK runner instance
 
         Returns:
-            The prepared session with the external token stored in its state
+            The prepared session with filtered HTTP headers stored in its state
         """
-        # Call parent to get or create the session
         session: Session = await super()._prepare_session(context, run_request, runner)
 
-        # Extract the X-External-Token header from the request context
-        # The call_context.state contains headers from the original HTTP request
-        if context.call_context and "headers" in context.call_context.state:
+        if self._propagate_headers_lower and context.call_context and "headers" in context.call_context.state:
             headers = context.call_context.state["headers"]
-            # Headers might be in different cases, check all variations
-            external_token = (
-                headers.get("x-external-token") or headers.get("X-External-Token") or headers.get("X-EXTERNAL-TOKEN")
-            )
+            if headers:
+                state_delta: dict[str, object] = {}
+                for key, value in headers.items():
+                    if key.lower() in self._propagate_headers_lower:
+                        state_delta[f"{HTTP_HEADERS_SESSION_KEY}.{key.lower()}"] = value
 
-            if external_token:
-                # Store the token in the session state using ADK's recommended method:
-                # Create an Event with a state_delta and append it to the session.
-                # This follows ADK's pattern for updating session state as documented at:
-                # https://google.github.io/adk-docs/sessions/state/#how-state-is-updated-recommended-methods
-                event = Event(
-                    author="system", actions=EventActions(state_delta={EXTERNAL_TOKEN_SESSION_KEY: external_token})
-                )
-                await runner.session_service.append_event(session, event)
-                logger.debug("Stored external token in session %s via state_delta", session.id)
+                if state_delta:
+                    event = Event(author="system", actions=EventActions(state_delta=state_delta))
+                    await runner.session_service.append_event(session, event)
+                    logger.debug("Stored %d HTTP headers in session %s via state_delta", len(state_delta), session.id)
 
         return session
 
@@ -98,12 +95,17 @@ class HealthCheckFilter(logging.Filter):
         return record.getMessage().find(AGENT_CARD_WELL_KNOWN_PATH) == -1
 
 
-async def create_a2a_app(agent: BaseAgent, rpc_url: str) -> A2AStarletteApplication:
+async def create_a2a_app(
+    agent: BaseAgent, rpc_url: str, propagate_headers: set[str] | None = None
+) -> A2AStarletteApplication:
     """Create an A2A Starlette application from an ADK agent.
 
     Args:
         agent: The ADK agent to convert
         rpc_url: The URL where the agent will be available for A2A communication
+        propagate_headers: Union of all header names that any MCP tool is configured to
+            propagate. Only these headers will be captured from incoming requests and
+            stored in the session state.
     Returns:
         An A2AStarletteApplication instance
     """
@@ -125,9 +127,10 @@ async def create_a2a_app(agent: BaseAgent, rpc_url: str) -> A2AStarletteApplicat
     # Create A2A components
     task_store = InMemoryTaskStore()
 
-    # Use custom executor that captures X-External-Token and stores in session
-    agent_executor = TokenCapturingA2aAgentExecutor(
+    # Use custom executor that captures HTTP headers and stores in session
+    agent_executor = HeaderCapturingA2aAgentExecutor(
         runner=create_runner,
+        propagate_headers=propagate_headers or set(),
     )
 
     request_handler = DefaultRequestHandler(agent_executor=agent_executor, task_store=task_store)
@@ -181,6 +184,7 @@ def to_a2a(
     """
 
     agent_factory = agent_factory or AgentFactory()
+    all_propagate_headers = {h for tool in (tools or []) for h in tool.propagate_headers}
 
     async def a2a_app_creator() -> A2AStarletteApplication:
         configured_agent = await agent_factory.load_agent(
@@ -188,7 +192,7 @@ def to_a2a(
             sub_agents=sub_agents or [],
             tools=tools or [],
         )
-        return await create_a2a_app(configured_agent, rpc_url)
+        return await create_a2a_app(configured_agent, rpc_url, propagate_headers=all_propagate_headers)
 
     return to_starlette(a2a_app_creator)
 
