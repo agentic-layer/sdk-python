@@ -107,7 +107,7 @@ class TestAgentIntegration:
 
     @pytest.mark.asyncio
     async def test_simple_conversation(
-            self, app_factory: Any, agent_factory: Any, llm_controller: LLMMockController
+        self, app_factory: Any, agent_factory: Any, llm_controller: LLMMockController
     ) -> None:
         """Test basic agent conversation with mocked LLM.
 
@@ -145,11 +145,11 @@ class TestAgentIntegration:
 
     @pytest.mark.asyncio
     async def test_with_sub_agent(
-            self,
-            app_factory: Any,
-            agent_factory: Any,
-            llm_controller: LLMMockController,
-            respx_mock: respx.MockRouter,
+        self,
+        app_factory: Any,
+        agent_factory: Any,
+        llm_controller: LLMMockController,
+        respx_mock: respx.MockRouter,
     ) -> None:
         """Test main agent configured with a sub-agent.
 
@@ -220,7 +220,7 @@ class TestAgentIntegration:
                         call
                         for call in respx_mock.calls
                         if call.request.url.path == "/.well-known/agent-card.json"
-                           and "sub-agent.test" in str(call.request.url)
+                        and "sub-agent.test" in str(call.request.url)
                     ]
                     assert len(agent_card_calls) == 1, "Sub-agent card should be fetched during startup"
 
@@ -280,11 +280,11 @@ class TestAgentIntegration:
 
     @pytest.mark.asyncio
     async def test_with_tool_server(
-            self,
-            app_factory: Any,
-            agent_factory: Any,
-            llm_controller: LLMMockController,
-            respx_mock: respx.MockRouter,
+        self,
+        app_factory: Any,
+        agent_factory: Any,
+        llm_controller: LLMMockController,
+        respx_mock: respx.MockRouter,
     ) -> None:
         """Test agent calling an MCP server tool.
 
@@ -377,11 +377,11 @@ class TestAgentIntegration:
 
     @pytest.mark.asyncio
     async def test_external_token_passed_to_mcp_tools(
-            self,
-            app_factory: Any,
-            agent_factory: Any,
-            llm_controller: LLMMockController,
-            respx_mock: respx.MockRouter,
+        self,
+        app_factory: Any,
+        agent_factory: Any,
+        llm_controller: LLMMockController,
+        respx_mock: respx.MockRouter,
     ) -> None:
         """Test that X-External-Token header is passed from A2A request to MCP tool calls.
 
@@ -744,11 +744,11 @@ class TestAgentIntegration:
 
     @pytest.mark.asyncio
     async def test_mcp_server_restart_causes_communication_failure(
-            self,
-            app_factory: Any,
-            agent_factory: Any,
-            llm_controller: LLMMockController,
-            respx_mock: respx.MockRouter,
+        self,
+        app_factory: Any,
+        agent_factory: Any,
+        llm_controller: LLMMockController,
+        respx_mock: respx.MockRouter,
     ) -> None:
         """Test that agent fails to communicate with MCP server after server restart.
 

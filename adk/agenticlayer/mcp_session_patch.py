@@ -67,41 +67,41 @@ def _patched_retry_on_errors(func: Callable[..., Any]) -> Callable[..., Any]:
                 if hasattr(session_manager, "_sessions"):
                     try:
                         # Use the lock to safely access sessions
-                        num_sessions = len(session_manager._sessions)  # type: ignore
+                        num_sessions = len(session_manager._sessions)
                         logger.debug(f"[PATCH] Found {num_sessions} cached sessions to invalidate")
 
                         # We can't use the lock here because we're already in an async context
                         # and the lock might be held. Instead, just try to close streams.
-                        for session_key, (session, _, _) in list(session_manager._sessions.items()):  # type: ignore
+                        for session_key, (session, _, _) in list(session_manager._sessions.items()):
                             try:
                                 logger.debug(f"[PATCH] Invalidating session: {session_key}")
 
                                 # Force-close the read stream
                                 if hasattr(session, "_read_stream"):
-                                    stream = session._read_stream
+                                    read_stream = session._read_stream
                                     logger.debug(
-                                        f"[PATCH] Read stream type: {type(stream).__name__}, has aclose: {hasattr(stream, 'aclose')}"
+                                        f"[PATCH] Read stream type: {type(read_stream).__name__}, has aclose: {hasattr(read_stream, 'aclose')}"
                                     )
-                                    if hasattr(stream, "aclose"):
-                                        await stream.aclose()
+                                    if hasattr(read_stream, "aclose"):
+                                        await read_stream.aclose()
                                         logger.debug("[PATCH] Closed read stream via aclose()")
-                                    elif hasattr(stream, "close"):
-                                        stream.close()
+                                    elif hasattr(read_stream, "close"):
+                                        read_stream.close()
                                         logger.debug("[PATCH] Closed read stream via close()")
                                 else:
                                     logger.debug("[PATCH] Session has no _read_stream")
 
                                 # Force-close the write stream
                                 if hasattr(session, "_write_stream"):
-                                    stream = session._write_stream
+                                    write_stream = session._write_stream
                                     logger.debug(
-                                        f"[PATCH] Write stream type: {type(stream).__name__}, has aclose: {hasattr(stream, 'aclose')}"
+                                        f"[PATCH] Write stream type: {type(write_stream).__name__}, has aclose: {hasattr(write_stream, 'aclose')}"
                                     )
-                                    if hasattr(stream, "aclose"):
-                                        await stream._write_stream.aclose()
+                                    if hasattr(write_stream, "aclose"):
+                                        await write_stream.aclose()
                                         logger.debug("[PATCH] Closed write stream via aclose()")
-                                    elif hasattr(stream, "close"):
-                                        stream.close()
+                                    elif hasattr(write_stream, "close"):
+                                        write_stream.close()
                                         logger.debug("[PATCH] Closed write stream via close()")
                                 else:
                                     logger.debug("[PATCH] Session has no _write_stream")
