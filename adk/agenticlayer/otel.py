@@ -1,6 +1,7 @@
 """OpenTelemetry setup for a Google ADK Agent App."""
 
 import logging
+import os
 
 import httpx
 from openinference.instrumentation.google_adk import GoogleADKInstrumentor
@@ -8,14 +9,13 @@ from opentelemetry import metrics, trace
 from opentelemetry._logs import set_logger_provider
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-from opentelemetry.sdk import trace as trace_sdk
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 _logger = logging.getLogger(__name__)
 
@@ -65,10 +65,16 @@ def setup_otel() -> None:
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
     # Traces
-    _tracer_provider = trace_sdk.TracerProvider()
-    _tracer_provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter()))
-    # Sets the global default tracer provider
-    trace.set_tracer_provider(_tracer_provider)
+    trace_provider = TracerProvider()
+    if os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc") == "grpc":
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter as OTLPSpanExporterGrpc
+
+        trace_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporterGrpc()))
+    else:
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as OTLPSpanExporterHttp
+
+        trace_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporterHttp()))
+    trace.set_tracer_provider(trace_provider)
 
     # Instrument Google ADK using openinference instrumentation
     GoogleADKInstrumentor().instrument()
