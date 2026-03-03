@@ -32,6 +32,7 @@ from .agent import AgentFactory
 from .callback_tracer_plugin import CallbackTracerPlugin
 from .config import McpTool, SubAgent
 from .constants import HTTP_HEADERS_SESSION_KEY
+from .metrics_plugin import MetricsPlugin
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ async def create_a2a_app(
             app=App(
                 name=agent.name or "adk_agent",
                 root_agent=agent,
-                plugins=[CallbackTracerPlugin()],
+                plugins=[CallbackTracerPlugin(), MetricsPlugin()],
             ),
             artifact_service=InMemoryArtifactService(),
             session_service=InMemorySessionService(),  # type: ignore[no-untyped-call]
