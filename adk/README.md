@@ -22,10 +22,11 @@ pip install agentic-layer-sdk-adk
 Basic usage example:
 
 ```python
-from agenticlayer.agent_to_a2a import to_a2a
 from agenticlayer.config import parse_sub_agents, parse_tools
-from agenticlayer.otel import setup_otel
 from google.adk.agents import LlmAgent
+
+from agenticlayer.adk.agent_to_a2a import to_a2a
+from agenticlayer.adk.otel import setup_otel
 
 # Set up OpenTelemetry instrumentation, logging and metrics
 setup_otel()

@@ -10,8 +10,8 @@ from agenticlayer.config import McpTool, SubAgent
 from asgi_lifespan import LifespanManager
 from httpx_retries import Retry
 
-from agenticlayer_msaf.agent import MsafAgentFactory
-from agenticlayer_msaf.agent_to_a2a import to_a2a
+from agenticlayer.msaf.agent import MsafAgentFactory
+from agenticlayer.msaf.agent_to_a2a import to_a2a
 
 
 @pytest_asyncio.fixture

@@ -33,7 +33,7 @@ from agenticlayer.config import McpTool, SubAgent
 from httpx_retries import Retry
 from starlette.applications import Starlette
 
-from agenticlayer_msaf.agent import MsafAgentFactory
+from agenticlayer.msaf.agent import MsafAgentFactory
 
 logger = logging.getLogger(__name__)
 
@@ -217,8 +217,8 @@ def to_a2a(
 
     Example:
         from agent_framework import Agent
-        from agenticlayer_msaf.agent_to_a2a import to_a2a
-        from agenticlayer_msaf.client import create_openai_client
+        from agenticlayer.msaf.agent_to_a2a import to_a2a
+        from agenticlayer.msaf.client import create_openai_client
 
         agent = Agent(client=create_openai_client(), instructions="You are a helpful assistant.")
         app = to_a2a(agent, name="MyAgent", rpc_url="http://localhost:8000/")

@@ -13,8 +13,8 @@ from httpx_retries import Retry
 from pydantic import AnyHttpUrl
 from starlette.testclient import TestClient
 
-from agenticlayer_msaf.agent import MsafAgentFactory
-from agenticlayer_msaf.agent_to_a2a import to_a2a
+from agenticlayer.msaf.agent import MsafAgentFactory
+from agenticlayer.msaf.agent_to_a2a import to_a2a
 from tests.fixtures.mock_client import create_mock_agent
 from tests.utils.helpers import create_asgi_request_handler, create_send_message_request, verify_jsonrpc_response
 

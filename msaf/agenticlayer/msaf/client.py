@@ -35,8 +35,8 @@ def create_openai_client(
 
             import os
             from agent_framework import Agent
-            from agenticlayer_msaf.client import create_openai_client
-            from agenticlayer_msaf.agent_to_a2a import to_a2a
+            from agenticlayer.msaf.client import create_openai_client
+            from agenticlayer.msaf.agent_to_a2a import to_a2a
 
             os.environ["LITELLM_PROXY_API_BASE"] = "http://litellm-proxy:4000"
             os.environ["LITELLM_PROXY_API_KEY"] = "sk-my-key"

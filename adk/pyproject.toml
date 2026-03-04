@@ -43,7 +43,7 @@ testpaths = "tests"
 pythonpath = [".", "../shared"]
 addopts = """\
 --strict-config \
---cov agenticlayer \
+--cov agenticlayer/adk \
 --cov-report html \
 --import-mode=importlib \
 --show-capture=no \
@@ -85,5 +85,5 @@ skips = ["**/tests/*"]
 [tool.mypy]
 strict = true
 explicit_package_bases = true
-mypy_path = [".", "../shared"]
+mypy_path = ["."]
 namespace_packages = true

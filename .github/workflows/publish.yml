@@ -16,8 +16,6 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - package: shared
-            directory: shared
           - package: adk
             directory: adk
           - package: msaf

@@ -8,8 +8,8 @@ This package provides utilities to convert a [Microsoft Agent Framework](https:/
 
 ```python
 from agent_framework import Agent
-from agenticlayer_msaf.agent_to_a2a import to_a2a
-from agenticlayer_msaf.client import create_openai_client
+from agenticlayer.msaf.agent_to_a2a import to_a2a
+from agenticlayer.msaf.client import create_openai_client
 
 agent = Agent(
     client=create_openai_client(),

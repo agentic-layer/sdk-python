@@ -30,9 +30,9 @@ from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from google.adk.sessions.session import Session
 from starlette.applications import Starlette
 
-from .agent import AgentFactory
-from .callback_tracer_plugin import CallbackTracerPlugin
-from .metrics_plugin import MetricsPlugin
+from agenticlayer.adk.agent import AgentFactory
+from agenticlayer.adk.callback_tracer_plugin import CallbackTracerPlugin
+from agenticlayer.adk.metrics_plugin import MetricsPlugin
 
 logger = logging.getLogger(__name__)
 

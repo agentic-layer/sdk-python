@@ -14,8 +14,8 @@ from httpx_retries import Retry
 from pydantic import AnyHttpUrl
 from starlette.testclient import TestClient
 
-from agenticlayer.agent import AgentFactory
-from agenticlayer.agent_to_a2a import to_a2a
+from agenticlayer.adk.agent import AgentFactory
+from agenticlayer.adk.agent_to_a2a import to_a2a
 from tests.fixtures.mock_llm import LLMMockController
 from tests.utils.helpers import (
     create_asgi_request_handler,

@@ -10,8 +10,8 @@ from asgi_lifespan import LifespanManager
 from google.adk.agents import LlmAgent
 from httpx_retries import Retry
 
-from agenticlayer.agent import AgentFactory
-from agenticlayer.agent_to_a2a import to_a2a
+from agenticlayer.adk.agent import AgentFactory
+from agenticlayer.adk.agent_to_a2a import to_a2a
 
 
 @pytest_asyncio.fixture
