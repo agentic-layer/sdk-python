@@ -1,6 +1,7 @@
-"""Constants shared across the agenticlayer package."""
+"""Constants shared across the agenticlayer package.
+Re-exported from agenticlayer_shared for backward compatibility.
+"""
 
-# Prefix used to store propagated HTTP headers in ADK session state as flat primitive keys.
-# Each header is stored as a separate string entry: f"{HTTP_HEADERS_SESSION_KEY}.{header_name_lower}"
-# e.g. "http_headers.authorization" -> "Bearer token"
-HTTP_HEADERS_SESSION_KEY = "http_headers"
+from agenticlayer_shared.constants import HTTP_HEADERS_SESSION_KEY
+
+__all__ = ["HTTP_HEADERS_SESSION_KEY"]

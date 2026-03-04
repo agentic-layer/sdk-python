@@ -30,10 +30,12 @@ package = false
 [tool.uv.workspace]
 members = [
     "adk",
+    "shared",
 ]
 
 [tool.uv.sources]
 agentic-layer-sdk-adk = { workspace = true }
+agentic-layer-sdk-shared = { workspace = true }
 
 
 [build-system]
@@ -48,6 +50,7 @@ pythonpath = ["."]
 addopts = """\
 --strict-config \
 --cov agenticlayer \
+--cov agenticlayer_shared \
 --cov-report html \
 --import-mode=importlib \
 --show-capture=no \
@@ -67,6 +70,7 @@ filterwarnings = [
 [tool.ruff]
 # Allow lines to be as long as 120.
 line-length = 120
+exclude = ["msaf/"]
 
 [tool.ruff.lint]
 # https://docs.astral.sh/ruff/rules/
@@ -89,5 +93,6 @@ skips = ["**/tests/*"]
 [tool.mypy]
 strict = true
 explicit_package_bases = true
-mypy_path = "adk"
+mypy_path = ["adk", "shared"]
 namespace_packages = true
+exclude = ["^msaf/"]

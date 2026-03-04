@@ -6,7 +6,7 @@ from typing import Any
 from agent_framework import Agent, BaseChatClient, ChatResponse, Message
 
 
-class MockChatClient(BaseChatClient[Any]):  # type: ignore[type-arg]
+class MockChatClient(BaseChatClient[Any]):
     """A mock chat client for testing that returns predefined responses."""
 
     def __init__(self, response_text: str = "Hello from mock agent!") -> None:

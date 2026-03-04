@@ -5,9 +5,10 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest_asyncio
-from agenticlayer_msaf.agent_to_a2a import to_a2a
 from agent_framework import Agent
 from asgi_lifespan import LifespanManager
+
+from agenticlayer_msaf.agent_to_a2a import to_a2a
 
 
 @pytest_asyncio.fixture

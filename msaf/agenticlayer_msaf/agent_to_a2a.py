@@ -6,7 +6,7 @@ import contextlib
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Awaitable, Callable
+from typing import AsyncIterator, Awaitable, Callable
 
 from a2a.server.agent_execution import AgentExecutor
 from a2a.server.agent_execution.context import RequestContext
@@ -14,7 +14,17 @@ from a2a.server.apps import A2AStarletteApplication
 from a2a.server.events.event_queue import EventQueue
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
-from a2a.types import AgentCapabilities, AgentCard, Message, Role, TaskState, TaskStatus, TaskStatusUpdateEvent, TextPart
+from a2a.types import (
+    AgentCapabilities,
+    AgentCard,
+    Message,
+    Part,
+    Role,
+    TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
+    TextPart,
+)
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from agent_framework import SupportsAgentRun
 from starlette.applications import Starlette
@@ -35,18 +45,20 @@ class MsafAgentExecutor(AgentExecutor):
     the agent's response back to the A2A event queue.
     """
 
-    def __init__(self, agent: SupportsAgentRun[Any]) -> None:
+    def __init__(self, agent: SupportsAgentRun) -> None:
         self._agent = agent
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Execute the agent and publish results to the event queue."""
         user_input = context.get_user_input()
+        task_id = context.task_id or str(uuid.uuid4())
+        context_id = context.context_id or str(uuid.uuid4())
 
         if not context.current_task:
             await event_queue.enqueue_event(
                 TaskStatusUpdateEvent(
-                    task_id=context.task_id,
-                    context_id=context.context_id,
+                    task_id=task_id,
+                    context_id=context_id,
                     status=TaskStatus(
                         state=TaskState.submitted,
                         message=context.message,
@@ -58,8 +70,8 @@ class MsafAgentExecutor(AgentExecutor):
 
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
-                task_id=context.task_id,
-                context_id=context.context_id,
+                task_id=task_id,
+                context_id=context_id,
                 status=TaskStatus(
                     state=TaskState.working,
                     timestamp=datetime.now(timezone.utc).isoformat(),
@@ -74,14 +86,14 @@ class MsafAgentExecutor(AgentExecutor):
 
             await event_queue.enqueue_event(
                 TaskStatusUpdateEvent(
-                    task_id=context.task_id,
-                    context_id=context.context_id,
+                    task_id=task_id,
+                    context_id=context_id,
                     status=TaskStatus(
                         state=TaskState.completed,
                         message=Message(
                             message_id=str(uuid.uuid4()),
                             role=Role.agent,
-                            parts=[TextPart(text=response_text)],
+                            parts=[Part(root=TextPart(text=response_text))],
                         ),
                         timestamp=datetime.now(timezone.utc).isoformat(),
                     ),
@@ -92,14 +104,14 @@ class MsafAgentExecutor(AgentExecutor):
             logger.error("Error running agent: %s", e, exc_info=True)
             await event_queue.enqueue_event(
                 TaskStatusUpdateEvent(
-                    task_id=context.task_id,
-                    context_id=context.context_id,
+                    task_id=task_id,
+                    context_id=context_id,
                     status=TaskStatus(
                         state=TaskState.failed,
                         message=Message(
                             message_id=str(uuid.uuid4()),
                             role=Role.agent,
-                            parts=[TextPart(text=str(e))],
+                            parts=[Part(root=TextPart(text=str(e)))],
                         ),
                         timestamp=datetime.now(timezone.utc).isoformat(),
                     ),
@@ -109,10 +121,11 @@ class MsafAgentExecutor(AgentExecutor):
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Cancel the ongoing task."""
+        task_id = context.task_id or str(uuid.uuid4())
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
-                task_id=context.task_id,
-                context_id=context.context_id,
+                task_id=task_id,
+                context_id=context.context_id or str(uuid.uuid4()),
                 status=TaskStatus(
                     state=TaskState.canceled,
                     timestamp=datetime.now(timezone.utc).isoformat(),
@@ -123,7 +136,7 @@ class MsafAgentExecutor(AgentExecutor):
 
 
 async def create_a2a_app(
-    agent: SupportsAgentRun[Any],
+    agent: SupportsAgentRun,
     name: str,
     description: str | None,
     rpc_url: str,
@@ -145,7 +158,7 @@ async def create_a2a_app(
 
     agent_card = AgentCard(
         name=name,
-        description=description,
+        description=description or "",
         url=rpc_url,
         version="0.1.0",
         capabilities=AgentCapabilities(),
@@ -163,7 +176,7 @@ async def create_a2a_app(
 
 
 def to_a2a(
-    agent: SupportsAgentRun[Any],
+    agent: SupportsAgentRun,
     name: str,
     rpc_url: str,
     description: str | None = None,
