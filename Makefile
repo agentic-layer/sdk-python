@@ -4,23 +4,23 @@ all: build
 
 .PHONY: build
 build:
-	uv sync --all-packages
+	$(MAKE) -C adk build
+	$(MAKE) -C msaf build
 
 
 .PHONY: test
 test: build
-	uv run pytest
+	$(MAKE) -C adk test
+	$(MAKE) -C msaf test
 
 
 .PHONY: check
 check: build
-	uv run ruff check
-	uv run mypy .
-	uv run bandit -c pyproject.toml -r .
-	make test
+	$(MAKE) -C adk check
+	$(MAKE) -C msaf check
 
 
 .PHONY: check-fix
 check-fix: build
-	uv run ruff format
-	uv run ruff check --fix
+	$(MAKE) -C adk check-fix
+	$(MAKE) -C msaf check-fix

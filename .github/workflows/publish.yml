@@ -9,9 +9,19 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/agentic-layer-sdk-adk
+      url: ${{ matrix.pypi_url }}
     permissions:
       id-token: write
+    strategy:
+      max-parallel: 1
+      matrix:
+        include:
+          - package: adk
+            directory: adk
+            pypi_url: https://pypi.org/p/agentic-layer-sdk-adk
+          - package: msaf
+            directory: msaf
+            pypi_url: https://pypi.org/p/agentic-layer-sdk-msaf
 
     steps:
       - name: 'Checkout'
@@ -26,21 +36,19 @@ jobs:
       - name: Setup Python
         uses: 'actions/setup-python@v6'
         with:
-          python-version-file: "pyproject.toml"
-
-      - name: Install Dependencies
-        working-directory: adk
-        run: uv sync
+          python-version-file: "adk/pyproject.toml"
 
       - name: uv Version Bump
-        working-directory: adk
+        working-directory: ${{ matrix.directory }}
         run: |-
           VERSION=${{ github.ref_name }}
           uv version "${VERSION#v}"
 
-      - name: 'Build adk package'
-        working-directory: adk
+      - name: Build package
+        working-directory: ${{ matrix.directory }}
         run: uv build
 
-      - name: 'Publish adk package to PyPI'
+      - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: ${{ matrix.directory }}/dist

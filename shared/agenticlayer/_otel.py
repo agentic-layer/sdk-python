@@ -1,10 +1,9 @@
-"""OpenTelemetry setup for a Google ADK Agent App."""
+"""Framework-independent OpenTelemetry setup."""
 
 import logging
 import os
 
 import httpx
-from openinference.instrumentation.google_adk import GoogleADKInstrumentor
 from opentelemetry import metrics, trace
 from opentelemetry._logs import set_logger_provider
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
@@ -60,7 +59,7 @@ def response_hook(span: trace.Span, request: httpx.Request, response: httpx.Resp
 
 
 def setup_otel() -> None:
-    """Set up OpenTelemetry tracing, logging and metrics."""
+    """Set up OpenTelemetry tracing, logging and metrics (framework-independent)."""
     # Set log level for urllib to WARNING to reduce noise (like sending logs to OTLP)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
@@ -76,8 +75,6 @@ def setup_otel() -> None:
         trace_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporterHttp()))
     trace.set_tracer_provider(trace_provider)
 
-    # Instrument Google ADK using openinference instrumentation
-    GoogleADKInstrumentor().instrument()
     # Instrument HTTPX clients (this also transfers the trace context automatically)
     HTTPXClientInstrumentor().instrument(
         request_hook=request_hook,

@@ -6,8 +6,6 @@ import httpx
 import pytest
 import respx
 from a2a.client.errors import A2AClientHTTPError
-from agenticlayer.agent import AgentFactory
-from agenticlayer.agent_to_a2a import to_a2a
 from agenticlayer.config import InteractionType, McpTool, SubAgent
 from agenticlayer.loguru_config import setup_logging
 from asgi_lifespan import LifespanManager
@@ -16,6 +14,8 @@ from httpx_retries import Retry
 from pydantic import AnyHttpUrl
 from starlette.testclient import TestClient
 
+from agenticlayer.adk.agent import AgentFactory
+from agenticlayer.adk.agent_to_a2a import to_a2a
 from tests.fixtures.mock_llm import LLMMockController
 from tests.utils.helpers import (
     create_asgi_request_handler,
