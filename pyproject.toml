@@ -3,96 +3,11 @@ name = "agentic-layer-sdk"
 version = "0.1.0"
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
-dependencies = [
-    "agentic-layer-sdk-adk",
-    "loguru>=0.7.3",
-]
-
-[dependency-groups]
-dev = [
-    "mypy[reports]>=1.12.0,<2",
-    "ruff>=0.11.2",
-    "bandit[toml]>=1.7.8",
-    "pip-audit>=2.5,<3",
-    "pytest>=9.0.1,<10",
-    "pytest-cov>=7,<8",
-    "types-protobuf>=6.30.2.20250822",
-    "pytest-asyncio>=1.3.0",
-    "asgi-lifespan>=2.1.0",
-    "respx>=0.22.0",
-    "fastmcp>=3.0.0rc2",
-]
-
-
-[tool.uv]
-package = false
-
-[tool.uv.workspace]
-members = [
-    "adk",
-    "shared",
-]
-
-[tool.uv.sources]
-agentic-layer-sdk-adk = { workspace = true }
-agentic-layer-sdk-shared = { workspace = true }
-
+dependencies = []
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-
-[tool.pytest.ini_options]
-minversion = "7.0"
-testpaths = "adk/tests"
-pythonpath = ["."]
-addopts = """\
---strict-config \
---cov agenticlayer \
---cov agenticlayer_shared \
---cov-report html \
---import-mode=importlib \
---show-capture=no \
-"""
-filterwarnings = [
-    # https://github.com/boto/boto3/issues/3889
-    "ignore::UserWarning:google.adk.*",
-    "ignore::DeprecationWarning:google.*",
-    "ignore::DeprecationWarning:litellm.*",
-    "ignore::DeprecationWarning:a2a.*",
-    "ignore::UserWarning:agenticlayer.*",
-    # google-adk uses the deprecated streamablehttp_client from mcp; suppress until upstream fixes it
-    "ignore:Use `streamable_http_client` instead.:DeprecationWarning",
-]
-
-
-[tool.ruff]
-# Allow lines to be as long as 120.
-line-length = 120
-exclude = ["msaf/"]
-
-[tool.ruff.lint]
-# https://docs.astral.sh/ruff/rules/
-# I001 --> enable import sorting rules
-# Q --> enable flake8-quotes rules for consistent quote style
-# N --> pep8-naming for proper naming conventions
-# PT --> flake8-pytest-style for pytest best practices
-# TID251 --> banned relative imports
-# DTZ --> datetime timezone awareness
-extend-select = ["Q", "N", "I001", "PT", "TID251", "DTZ"]
-
-
-[tool.bandit]
-exclude_dirs = [".venv"]
-
-[tool.bandit.assert_used]
-skips = ["**/tests/*"]
-
-
-[tool.mypy]
-strict = true
-explicit_package_bases = true
-mypy_path = ["adk", "shared"]
-namespace_packages = true
-exclude = ["^msaf/"]
+[tool.uv]
+package = false
