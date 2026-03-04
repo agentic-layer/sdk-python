@@ -26,21 +26,38 @@ jobs:
       - name: Setup Python
         uses: 'actions/setup-python@v6'
         with:
-          python-version-file: "pyproject.toml"
-
-      - name: Install Dependencies
-        working-directory: adk
-        run: uv sync
+          python-version-file: "adk/pyproject.toml"
 
       - name: uv Version Bump
-        working-directory: adk
         run: |-
           VERSION=${{ github.ref_name }}
-          uv version "${VERSION#v}"
+          uv version --directory shared "${VERSION#v}"
+          uv version --directory adk "${VERSION#v}"
+          uv version --directory msaf "${VERSION#v}"
+
+      - name: 'Build shared package'
+        working-directory: shared
+        run: uv build
 
       - name: 'Build adk package'
         working-directory: adk
         run: uv build
 
+      - name: 'Build msaf package'
+        working-directory: msaf
+        run: uv build
+
+      - name: 'Publish shared package to PyPI'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: shared/dist
+
       - name: 'Publish adk package to PyPI'
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: adk/dist
+
+      - name: 'Publish msaf package to PyPI'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: msaf/dist
