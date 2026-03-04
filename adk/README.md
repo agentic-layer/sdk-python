@@ -28,7 +28,7 @@ from agenticlayer.otel import setup_otel
 from google.adk.agents import LlmAgent
 
 # Set up OpenTelemetry instrumentation, logging and metrics
-setup_otel(capture_http_bodies=True)
+setup_otel()
 
 # Parse sub agents and tools from JSON configuration
 sub_agent, agent_tools = parse_sub_agents("{}")
