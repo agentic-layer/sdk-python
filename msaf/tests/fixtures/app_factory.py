@@ -6,8 +6,11 @@ from typing import Any
 
 import pytest_asyncio
 from agent_framework import Agent
+from agenticlayer_shared.config import McpTool, SubAgent
 from asgi_lifespan import LifespanManager
+from httpx_retries import Retry
 
+from agenticlayer_msaf.agent import MsafAgentFactory
 from agenticlayer_msaf.agent_to_a2a import to_a2a
 
 
@@ -26,6 +29,8 @@ def msaf_app_factory() -> Any:
         agent: Agent[Any],
         name: str = "test_agent",
         description: str | None = "Test agent",
+        sub_agents: list[SubAgent] | None = None,
+        tools: list[McpTool] | None = None,
     ) -> AsyncIterator[Any]:
         rpc_url = "http://localhost:80/"
         app = to_a2a(
@@ -33,6 +38,9 @@ def msaf_app_factory() -> Any:
             name=name,
             rpc_url=rpc_url,
             description=description,
+            sub_agents=sub_agents,
+            tools=tools,
+            agent_factory=MsafAgentFactory(retry=Retry(total=2)),
         )
         async with LifespanManager(app) as manager:
             yield manager.app

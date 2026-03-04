@@ -19,8 +19,12 @@ repos:
     # uv version.
     rev: 0.8.4
     hooks:
-      # Update the uv lockfile
+      # Update the uv lockfile for adk
       - id: uv-lock
+        args: ["--directory", "adk"]
+      # Update the uv lockfile for msaf
+      - id: uv-lock
+        args: ["--directory", "msaf"]
 
   - repo: local
     hooks:

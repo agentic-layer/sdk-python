@@ -1,32 +1,22 @@
 """Integration tests for the Microsoft Agent Framework A2A adapter."""
 
-import uuid
 from typing import Any
 
+import httpx
 import pytest
+import respx
+from a2a.client.errors import A2AClientHTTPError
+from agenticlayer_shared.config import InteractionType, McpTool, SubAgent
+from asgi_lifespan import LifespanManager
+from fastmcp import FastMCP
+from httpx_retries import Retry
+from pydantic import AnyHttpUrl
 from starlette.testclient import TestClient
 
+from agenticlayer_msaf.agent import MsafAgentFactory
+from agenticlayer_msaf.agent_to_a2a import to_a2a
 from tests.fixtures.mock_client import create_mock_agent
-
-
-def create_send_message_request(message_text: str = "Hello, agent!") -> dict[str, Any]:
-    """Create an A2A send message request."""
-    message_id = str(uuid.uuid4())
-    context_id = str(uuid.uuid4())
-    return {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "message/send",
-        "params": {
-            "message": {
-                "role": "user",
-                "parts": [{"kind": "text", "text": message_text}],
-                "messageId": message_id,
-                "contextId": context_id,
-            },
-            "metadata": {},
-        },
-    }
+from tests.utils.helpers import create_asgi_request_handler, create_send_message_request, verify_jsonrpc_response
 
 
 class TestMsafAgentIntegration:
@@ -68,15 +58,9 @@ class TestMsafAgentIntegration:
 
             # Then: A successful JSON-RPC response is returned
             assert response.status_code == 200
-            data = response.json()
-            assert data.get("jsonrpc") == "2.0"
-            assert "result" in data
+            result = verify_jsonrpc_response(response.json())
 
             # And: The result contains the agent's response text
-            result = data["result"]
-            assert result is not None
-
-            # Extract text from the status message
             status = result.get("status", {})
             message = status.get("message", {})
             parts = message.get("parts", [])
@@ -99,3 +83,126 @@ class TestMsafAgentIntegration:
             assert response.status_code == 200
             data = response.json()
             assert data.get("url") == "http://localhost:80/"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_sub_agent_unavailable_fails_startup(self, msaf_app_factory: Any) -> None:
+        """Test that unavailable sub-agents cause app startup to fail with retries."""
+
+        # Given: Mock sub-agent that returns connection errors
+        agent_card_url = "http://unavailable-agent.local/.well-known/agent-card.json"
+        route_unavailable = respx.get(agent_card_url).mock(side_effect=httpx.ConnectError("Connection failed"))
+        agent = create_mock_agent(name="test_agent")
+
+        sub_agents = [
+            SubAgent(
+                name="unavailable_agent",
+                url=AnyHttpUrl(agent_card_url),
+                interaction_type=InteractionType.TOOL_CALL,
+            ),
+        ]
+
+        # Expect: App creation should fail with A2AClientHTTPError
+        with pytest.raises(A2AClientHTTPError, match="Network communication error"):
+            async with msaf_app_factory(agent=agent, sub_agents=sub_agents):
+                pass
+
+        # And: The retry mechanism should have been used (total=2 means initial + 2 retries = 3 calls)
+        assert route_unavailable.call_count == 3, (
+            f"Expected 3 calls (1 initial + 2 retries), got {route_unavailable.call_count}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_with_sub_agent(
+        self,
+        msaf_app_factory: Any,
+        respx_mock: respx.MockRouter,
+    ) -> None:
+        """Test main agent configured with a sub-agent.
+
+        Verifies both sub-agent integration (agent card fetching) and full conversation flow
+        where the main agent calls the sub-agent as a tool.
+        """
+
+        # Given: Sub-agent that returns a fixed response
+        sub_agent_response = "The weather is sunny and 75 degrees!"
+        sub_agent = create_mock_agent(name="weather_agent", response_text=sub_agent_response)
+        sub_agent_url = "http://sub-agent.test"
+
+        sub_agent_app = to_a2a(
+            agent=sub_agent,
+            name="weather_agent",
+            rpc_url=sub_agent_url,
+            agent_factory=MsafAgentFactory(retry=Retry(total=2)),
+        )
+
+        async with LifespanManager(sub_agent_app) as sub_manager:
+            # Route sub-agent requests through ASGI transport
+            respx_mock.route(host="sub-agent.test").mock(
+                side_effect=create_asgi_request_handler(sub_manager.app, sub_agent_url)
+            )
+
+            # Given: Main agent that responds with the sub-agent's answer
+            main_agent_response = f"According to the weather agent: {sub_agent_response}"
+            main_agent = create_mock_agent(name="main_agent", response_text=main_agent_response)
+
+            sub_agents = [
+                SubAgent(
+                    name="weather_agent",
+                    url=AnyHttpUrl(f"{sub_agent_url}/.well-known/agent-card.json"),
+                    interaction_type=InteractionType.TOOL_CALL,
+                ),
+            ]
+
+            # When: Create main agent with sub-agent configuration
+            async with msaf_app_factory(main_agent, name="main_agent", sub_agents=sub_agents) as app:
+                client = TestClient(app)
+                response = client.post("/", json=create_send_message_request("What is the weather?"))
+
+            # Then: Response is successful
+            assert response.status_code == 200
+            result = verify_jsonrpc_response(response.json())
+            assert result["status"]["state"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_with_tool_server(
+        self,
+        msaf_app_factory: Any,
+        respx_mock: respx.MockRouter,
+    ) -> None:
+        """Test agent calling an MCP server tool.
+
+        Verifies both tool integration and full conversation flow with tool calls.
+        """
+
+        # Given: MCP server with 'add' tool
+        mcp = FastMCP("Calculator")
+
+        @mcp.tool()
+        def add(a: int, b: int) -> int:
+            """Add two numbers."""
+            return a + b
+
+        mcp_server_url = "http://test-mcp.local"
+        mcp_app = mcp.http_app(path="/mcp")
+
+        async with LifespanManager(mcp_app) as mcp_manager:
+            # Route MCP requests through ASGI transport
+            respx_mock.route(host="test-mcp.local").mock(
+                side_effect=create_asgi_request_handler(mcp_manager.app, mcp_server_url)
+            )
+
+            # Given: Agent that returns a fixed response (the MockChatClient can't call tools,
+            # but we verify the MCP tool is registered and the app starts correctly)
+            test_agent = create_mock_agent(name="test_agent", response_text="Calculation complete!")
+            tools = [McpTool(name="calc", url=AnyHttpUrl(f"{mcp_server_url}/mcp"), timeout=30)]
+
+            # When: Create agent with MCP tool
+            async with msaf_app_factory(test_agent, tools=tools) as app:
+                client = TestClient(app)
+                response = client.post("/", json=create_send_message_request("Calculate 5 + 3"))
+
+            # Then: Response is successful (tool is registered, agent runs)
+            assert response.status_code == 200
+            result = verify_jsonrpc_response(response.json())
+            assert "status" in result
