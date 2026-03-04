@@ -1,6 +1,6 @@
 """OpenTelemetry setup for a Microsoft Agent Framework Agent App."""
 
-from agenticlayer_shared.otel import setup_otel as _setup_otel_shared
+from agenticlayer._otel import setup_otel as _setup_otel_shared
 
 __all__ = ["setup_otel"]
 

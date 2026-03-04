@@ -42,11 +42,11 @@ agentic-layer-sdk-shared = { path = "../shared" }
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = "tests"
-pythonpath = ["."]
+pythonpath = [".", "../shared"]
 addopts = """\
 --strict-config \
 --cov agenticlayer_msaf \
---cov agenticlayer_shared \
+--cov agenticlayer \
 --cov-report html \
 --import-mode=importlib \
 --show-capture=no \
@@ -74,13 +74,10 @@ skips = ["**/tests/*"]
 
 [tool.mypy]
 strict = true
-mypy_path = ["."]
-namespace_packages = false
+mypy_path = [".", "../shared"]
+namespace_packages = true
+explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 module = "agent_framework.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "google.*"
 ignore_missing_imports = true

@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest_asyncio
 from agent_framework import Agent
-from agenticlayer_shared.config import McpTool, SubAgent
+from agenticlayer.config import McpTool, SubAgent
 from asgi_lifespan import LifespanManager
 from httpx_retries import Retry
 

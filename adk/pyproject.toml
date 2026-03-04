@@ -40,11 +40,10 @@ agentic-layer-sdk-shared = { path = "../shared" }
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = "tests"
-pythonpath = ["."]
+pythonpath = [".", "../shared"]
 addopts = """\
 --strict-config \
 --cov agenticlayer \
---cov agenticlayer_shared \
 --cov-report html \
 --import-mode=importlib \
 --show-capture=no \

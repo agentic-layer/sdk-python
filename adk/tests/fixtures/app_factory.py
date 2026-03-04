@@ -5,13 +5,13 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest_asyncio
+from agenticlayer.config import McpTool, SubAgent
 from asgi_lifespan import LifespanManager
 from google.adk.agents import LlmAgent
 from httpx_retries import Retry
 
 from agenticlayer.agent import AgentFactory
 from agenticlayer.agent_to_a2a import to_a2a
-from agenticlayer.config import McpTool, SubAgent
 
 
 @pytest_asyncio.fixture

@@ -15,7 +15,7 @@ test: build
 .PHONY: check
 check: build
 	uv run ruff check
-	uv run mypy .
+	uv run mypy --no-incremental .
 	uv run bandit -c pyproject.toml -r .
 	make test
 

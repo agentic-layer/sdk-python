@@ -12,6 +12,16 @@ jobs:
       url: https://pypi.org/p/agentic-layer-sdk-adk
     permissions:
       id-token: write
+    strategy:
+      max-parallel: 1
+      matrix:
+        include:
+          - package: shared
+            directory: shared
+          - package: adk
+            directory: adk
+          - package: msaf
+            directory: msaf
 
     steps:
       - name: 'Checkout'
@@ -29,35 +39,16 @@ jobs:
           python-version-file: "adk/pyproject.toml"
 
       - name: uv Version Bump
+        working-directory: ${{ matrix.directory }}
         run: |-
           VERSION=${{ github.ref_name }}
-          uv version --directory shared "${VERSION#v}"
-          uv version --directory adk "${VERSION#v}"
-          uv version --directory msaf "${VERSION#v}"
+          uv version "${VERSION#v}"
 
-      - name: 'Build shared package'
-        working-directory: shared
+      - name: Build package
+        working-directory: ${{ matrix.directory }}
         run: uv build
 
-      - name: 'Build adk package'
-        working-directory: adk
-        run: uv build
-
-      - name: 'Build msaf package'
-        working-directory: msaf
-        run: uv build
-
-      - name: 'Publish shared package to PyPI'
+      - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: shared/dist
-
-      - name: 'Publish adk package to PyPI'
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: adk/dist
-
-      - name: 'Publish msaf package to PyPI'
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: msaf/dist
+          packages-dir: ${{ matrix.directory }}/dist
