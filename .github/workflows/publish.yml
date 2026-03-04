@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/agentic-layer-sdk-adk
+      url: ${{ matrix.pypi_url }}
     permissions:
       id-token: write
     strategy:
@@ -18,8 +18,10 @@ jobs:
         include:
           - package: adk
             directory: adk
+            pypi_url: https://pypi.org/p/agentic-layer-sdk-adk
           - package: msaf
             directory: msaf
+            pypi_url: https://pypi.org/p/agentic-layer-sdk-msaf
 
     steps:
       - name: 'Checkout'
