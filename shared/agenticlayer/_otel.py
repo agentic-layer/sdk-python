@@ -4,12 +4,12 @@ import logging
 import os
 
 import httpx
-from opentelemetry import metrics, trace
-from opentelemetry._logs import set_logger_provider
-from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+from opentelemetry import _logs, metrics, trace
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.instrumentation.logging import LoggingInstrumentor
+from opentelemetry.instrumentation.logging.handler import LoggingHandler
+from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
@@ -65,7 +65,7 @@ def setup_otel() -> None:
 
     # Traces
     trace_provider = TracerProvider()
-    if os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc") == "grpc":
+    if os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf") == "grpc":
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter as OTLPSpanExporterGrpc
 
         trace_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporterGrpc()))
@@ -81,14 +81,21 @@ def setup_otel() -> None:
         response_hook=response_hook,
     )
 
-    # Logs
-    logger_provider = LoggerProvider()
-    logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter()))
-    # Sets the global default logger provider
-    set_logger_provider(logger_provider)
+    # Logs - inject trace context into log records and export logs via OTLP
+    LoggingInstrumentor().instrument()
 
-    # Attach OTLP handler to root logger
-    logging.getLogger().addHandler(LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider))
+    logger_provider = LoggerProvider()
+    if os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf") == "grpc":
+        from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter as OTLPLogExporterGrpc
+
+        logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporterGrpc()))
+    else:
+        from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter as OTLPLogExporterHttp
+
+        logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporterHttp()))
+    _logs.set_logger_provider(logger_provider)
+
+    logging.getLogger().addHandler(LoggingHandler(logger_provider=logger_provider))
 
     # Sets the global default meter provider
     metrics.set_meter_provider(

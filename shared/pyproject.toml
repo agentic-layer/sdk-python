@@ -10,6 +10,7 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-grpc",
     "opentelemetry-instrumentation-starlette",
     "opentelemetry-instrumentation-httpx",
+    "opentelemetry-instrumentation-logging>=0.61b0",
     "starlette",
     "a2a-sdk",
 ]
