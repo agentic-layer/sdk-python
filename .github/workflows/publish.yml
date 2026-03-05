@@ -5,7 +5,46 @@ on:
       - 'v*'
 
 jobs:
+  publish-shared:
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/agentic-layer-sdk
+    permissions:
+      id-token: write
+
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@v6'
+
+      - name: Install uv
+        uses: 'astral-sh/setup-uv@v7'
+        with:
+          version: "0.10.7"
+          enable-cache: true
+
+      - name: Setup Python
+        uses: 'actions/setup-python@v6'
+        with:
+          python-version-file: "shared/pyproject.toml"
+
+      - name: uv Version Bump
+        working-directory: shared
+        run: |-
+          VERSION=${{ github.ref_name }}
+          uv version "${VERSION#v}"
+
+      - name: Build package
+        working-directory: shared
+        run: uv build
+
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: shared/dist
+
   publish:
+    needs: publish-shared
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -13,7 +52,6 @@ jobs:
     permissions:
       id-token: write
     strategy:
-      max-parallel: 1
       matrix:
         include:
           - package: adk
