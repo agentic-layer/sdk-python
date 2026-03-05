@@ -29,7 +29,7 @@ from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from agent_framework import SupportsAgentRun
 from agent_framework._mcp import MCPStreamableHTTPTool
 from agent_framework._tools import FunctionTool
-from agenticlayer.config import McpTool, SubAgent
+from agenticlayer.shared.config import McpTool, SubAgent
 from httpx_retries import Retry
 from starlette.applications import Starlette
 
@@ -298,7 +298,7 @@ def to_starlette(
     starlette_app = Starlette(lifespan=lifespan)
 
     # Instrument the Starlette app with OpenTelemetry
-    from agenticlayer.otel_starlette import instrument_starlette_app
+    from agenticlayer.shared.otel_starlette import instrument_starlette_app
 
     instrument_starlette_app(starlette_app)
 

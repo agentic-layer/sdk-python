@@ -6,8 +6,8 @@ import httpx
 import pytest
 import respx
 from a2a.client.errors import A2AClientHTTPError
-from agenticlayer.config import InteractionType, McpTool, SubAgent
-from agenticlayer.loguru_config import setup_logging
+from agenticlayer.shared.config import InteractionType, McpTool, SubAgent
+from agenticlayer.shared.loguru_config import setup_logging
 from asgi_lifespan import LifespanManager
 from fastmcp import Context, FastMCP
 from httpx_retries import Retry

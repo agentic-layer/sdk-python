@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest_asyncio
-from agenticlayer.config import McpTool, SubAgent
+from agenticlayer.shared.config import McpTool, SubAgent
 from asgi_lifespan import LifespanManager
 from google.adk.agents import LlmAgent
 from httpx_retries import Retry

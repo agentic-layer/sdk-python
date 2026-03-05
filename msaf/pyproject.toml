@@ -6,7 +6,6 @@ requires-python = ">=3.14,<3.15"
 dependencies = [
     "agentic-layer-sdk",
     "agent-framework-core>=1.0.0rc2",
-#    "httpx",
     "httpx-retries>=0.4.5",
 ]
 

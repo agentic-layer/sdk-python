@@ -1,7 +1,7 @@
 """Unit tests for config parsing functions."""
 
 import pytest
-from agenticlayer.config import InteractionType, parse_sub_agents, parse_tools
+from agenticlayer.shared.config import InteractionType, parse_sub_agents, parse_tools
 
 
 class TestParseSubAgents:

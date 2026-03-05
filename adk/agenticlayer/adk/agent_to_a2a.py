@@ -13,8 +13,8 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
-from agenticlayer.config import McpTool, SubAgent
-from agenticlayer.constants import HTTP_HEADERS_SESSION_KEY
+from agenticlayer.shared.config import McpTool, SubAgent
+from agenticlayer.shared.constants import HTTP_HEADERS_SESSION_KEY
 from google.adk.a2a.converters.request_converter import AgentRunRequest
 from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
 from google.adk.agents import LlmAgent
@@ -224,7 +224,7 @@ def to_starlette(a2a_starlette: Callable[[], Awaitable[A2AStarletteApplication]]
     starlette_app = Starlette(lifespan=lifespan)
 
     # Instrument the Starlette app with OpenTelemetry
-    from agenticlayer.otel_starlette import instrument_starlette_app
+    from agenticlayer.shared.otel_starlette import instrument_starlette_app
 
     instrument_starlette_app(starlette_app)
 

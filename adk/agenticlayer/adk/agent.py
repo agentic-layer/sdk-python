@@ -8,8 +8,8 @@ from typing import Callable
 import httpx
 from a2a.client import A2ACardResolver
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
-from agenticlayer.config import InteractionType, McpTool, SubAgent
-from agenticlayer.constants import HTTP_HEADERS_SESSION_KEY
+from agenticlayer.shared.config import InteractionType, McpTool, SubAgent
+from agenticlayer.shared.constants import HTTP_HEADERS_SESSION_KEY
 from google.adk.agents import BaseAgent, LlmAgent
 from google.adk.agents.llm_agent import ToolUnion
 from google.adk.agents.readonly_context import ReadonlyContext

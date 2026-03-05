@@ -8,7 +8,7 @@ from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from opentelemetry import trace
 from starlette.applications import Starlette
 
-from ._otel import _decode_body, _is_text_content
+from .otel import _decode_body, _is_text_content
 
 _logger = logging.getLogger(__name__)
 

@@ -13,7 +13,7 @@ from a2a.types import AgentCard as A2AAgentCard
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from agent_framework._mcp import MCPStreamableHTTPTool
 from agent_framework._tools import FunctionTool
-from agenticlayer.config import McpTool, SubAgent
+from agenticlayer.shared.config import McpTool, SubAgent
 from httpx_retries import Retry, RetryTransport
 
 logger = logging.getLogger(__name__)
