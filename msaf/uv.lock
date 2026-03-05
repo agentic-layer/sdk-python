@@ -63,7 +63,7 @@ requires-dist = [
     { name = "opentelemetry-exporter-otlp-proto-grpc" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-instrumentation-httpx" },
-    { name = "opentelemetry-instrumentation-logging", specifier = ">=0.61b0" },
+    { name = "opentelemetry-instrumentation-logging" },
     { name = "opentelemetry-instrumentation-starlette" },
     { name = "pydantic", specifier = ">=2" },
     { name = "starlette" },

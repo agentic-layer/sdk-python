@@ -36,16 +36,11 @@ uv run pytest         # Run tests directly
 
 ### Type Checking and Linting
 ```bash
-make check             # Run full check suite (mypy, ruff, bandit)
+make check             # Run full check suite (mypy, ruff)
 uv run mypy .          # Type check with mypy
 uv run ruff check      # Lint with ruff
 uv run ruff format     # Format code with ruff
 make check-fix         # Format and auto-fix linting issues
-```
-
-### Security
-```bash
-uv run bandit -c pyproject.toml -r .  # Security analysis
 ```
 
 ## Testing

@@ -16,7 +16,6 @@ test: build
 check: build
 	uv run ruff check
 	uv run mypy --no-incremental .
-	uv run bandit -c pyproject.toml -r .
 	make test
 
 

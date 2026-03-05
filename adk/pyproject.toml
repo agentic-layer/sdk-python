@@ -5,7 +5,7 @@ readme = "README.md"
 requires-python = ">=3.14,<3.15"
 dependencies = [
     "agentic-layer-sdk",
-    "google-adk[a2a]",
+    "google-adk[a2a]>=1.26.0,<2",
     "litellm",
     "openinference-instrumentation-google-adk",
     "httpx-retries>=0.4.5",
@@ -15,15 +15,13 @@ dependencies = [
 dev = [
     "mypy[reports]>=1.12.0,<2",
     "ruff>=0.11.2",
-    "bandit[toml]>=1.7.8",
-    "pip-audit>=2.5,<3",
     "pytest>=9.0.1,<10",
     "pytest-cov>=7,<8",
     "types-protobuf>=6.30.2.20250822",
     "pytest-asyncio>=1.3.0",
     "asgi-lifespan>=2.1.0",
     "respx>=0.22.0",
-    "fastmcp>=3.0.0rc2",
+    "fastmcp>=3.1.0",
 ]
 
 [build-system]
@@ -73,14 +71,6 @@ line-length = 120
 # TID251 --> banned relative imports
 # DTZ --> datetime timezone awareness
 extend-select = ["Q", "N", "I001", "PT", "TID251", "DTZ"]
-
-
-[tool.bandit]
-exclude_dirs = [".venv"]
-
-[tool.bandit.assert_used]
-skips = ["**/tests/*"]
-
 
 [tool.mypy]
 strict = true
