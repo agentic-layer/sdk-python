@@ -15,7 +15,7 @@ This is a Python SDK monorepo for the Agentic Layer platform that helps convert 
 
 ### Package Structure
 - Root package: `agentic-layer-sdk` (meta-package)
-- Shared: `agentic-layer-sdk-shared` in `shared/agenticlayer/` (namespace base, build-time only)
+- Shared: `agentic-layer-sdk` in `shared/agenticlayer/` (namespace base, build-time only)
 - ADK SDK: `agentic-layer-sdk-adk` in `adk/agenticlayer/adk/`
 - MSAF SDK: `agentic-layer-sdk-msaf` in `msaf/agenticlayer/msaf/`
 - Uses PEP 420 implicit namespace packages: `agenticlayer/` dirs have NO `__init__.py`

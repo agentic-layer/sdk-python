@@ -1,4 +1,4 @@
-# agentic-layer-sdk-shared
+# agentic-layer-sdk
 
 Framework-independent shared utilities for the Agentic Layer SDK.
 
