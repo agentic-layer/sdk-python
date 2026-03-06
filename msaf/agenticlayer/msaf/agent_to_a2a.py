@@ -30,6 +30,7 @@ from agent_framework import SupportsAgentRun
 from agent_framework._mcp import MCPStreamableHTTPTool
 from agent_framework._tools import FunctionTool
 from agenticlayer.shared.config import McpTool, SubAgent
+from agenticlayer.shared.otel import TraceContextHttpClient
 from httpx_retries import Retry
 from starlette.applications import Starlette
 
@@ -92,6 +93,15 @@ class MsafAgentExecutor(AgentExecutor):
         )
 
         try:
+            # Capture current OTel trace context so that MCP HTTP requests
+            # (which run in a background post_writer task without span context)
+            # carry the correct traceparent/tracestate headers.
+            for tool in self._extra_tools:
+                if isinstance(tool, MCPStreamableHTTPTool):
+                    client = getattr(tool, "_httpx_client", None)
+                    if isinstance(client, TraceContextHttpClient):
+                        client.capture_trace_context()
+
             response = await self._agent.run(user_input, tools=self._extra_tools if self._extra_tools else None)
             response_text = response.text if hasattr(response, "text") else str(response)
 

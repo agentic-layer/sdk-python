@@ -14,6 +14,7 @@ from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from agent_framework._mcp import MCPStreamableHTTPTool
 from agent_framework._tools import FunctionTool
 from agenticlayer.shared.config import McpTool, SubAgent
+from agenticlayer.shared.otel import TraceContextHttpClient
 from httpx_retries import Retry, RetryTransport
 
 logger = logging.getLogger(__name__)
@@ -135,11 +136,15 @@ class MsafAgentFactory:
         tools: list[MCPStreamableHTTPTool] = []
         for mcp_tool in mcp_tools:
             logger.info("Creating MCP tool %s at %s", mcp_tool.name, mcp_tool.url)
+            # Use TraceContextHttpClient so that stored trace context is injected
+            # into MCP HTTP requests made by the background post_writer task.
+            http_client = TraceContextHttpClient()
             tools.append(
                 MCPStreamableHTTPTool(
                     name=mcp_tool.name,
                     url=str(mcp_tool.url),
                     request_timeout=mcp_tool.timeout,
+                    http_client=http_client,
                 )
             )
         return tools
