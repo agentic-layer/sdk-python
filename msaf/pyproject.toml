@@ -28,12 +28,8 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["agenticlayer"]
 
-#[tool.uv]
-#prerelease = "allow"
-
 [tool.uv.sources]
 agentic-layer-sdk = { path = "../shared" }
-
 
 [tool.pytest.ini_options]
 minversion = "7.0"
@@ -47,11 +43,6 @@ addopts = """\
 --import-mode=importlib \
 --show-capture=no \
 """
-#filterwarnings = [
-#    "ignore::DeprecationWarning:a2a.*",
-#    "ignore::UserWarning:agent_framework.*",
-#    "ignore::DeprecationWarning:agent_framework.*",
-#]
 
 [tool.ruff]
 line-length = 120
