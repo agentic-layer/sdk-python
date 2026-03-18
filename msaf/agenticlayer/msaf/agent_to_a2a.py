@@ -30,7 +30,6 @@ from agent_framework import SupportsAgentRun
 from agent_framework._mcp import MCPStreamableHTTPTool
 from agent_framework._tools import FunctionTool
 from agenticlayer.shared.config import McpTool, SubAgent
-from agenticlayer.shared.otel import TraceContextHttpClient
 from httpx_retries import Retry
 from starlette.applications import Starlette
 
@@ -55,10 +54,14 @@ class MsafAgentExecutor(AgentExecutor):
     def __init__(
         self,
         agent: SupportsAgentRun,
-        extra_tools: list[FunctionTool | MCPStreamableHTTPTool] | None = None,
+        sub_agent_tools: list[FunctionTool] | None = None,
+        mcp_tool_configs: list[McpTool] | None = None,
+        agent_factory: MsafAgentFactory | None = None,
     ) -> None:
         self._agent = agent
-        self._extra_tools: list[FunctionTool | MCPStreamableHTTPTool] = extra_tools or []
+        self._sub_agent_tools: list[FunctionTool] = sub_agent_tools or []
+        self._mcp_tool_configs: list[McpTool] = mcp_tool_configs or []
+        self._agent_factory = agent_factory
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Execute the agent and publish results to the event queue."""
@@ -93,16 +96,15 @@ class MsafAgentExecutor(AgentExecutor):
         )
 
         try:
-            # Capture current OTel trace context so that MCP HTTP requests
-            # (which run in a background post_writer task without span context)
-            # carry the correct traceparent/tracestate headers.
-            for tool in self._extra_tools:
-                if isinstance(tool, MCPStreamableHTTPTool):
-                    client = getattr(tool, "_httpx_client", None)
-                    if isinstance(client, TraceContextHttpClient):
-                        client.capture_trace_context()
+            async with contextlib.AsyncExitStack() as stack:
+                mcp_tools: list[MCPStreamableHTTPTool] = []
+                if self._mcp_tool_configs and self._agent_factory:
+                    for mcp_tool in self._agent_factory.create_mcp_tools(self._mcp_tool_configs):
+                        await stack.enter_async_context(mcp_tool)
+                        mcp_tools.append(mcp_tool)
 
-            response = await self._agent.run(user_input, tools=self._extra_tools if self._extra_tools else None)
+                all_tools: list[FunctionTool | MCPStreamableHTTPTool] = [*self._sub_agent_tools, *mcp_tools]
+                response = await self._agent.run(user_input, tools=all_tools if all_tools else None)
             response_text = response.text if hasattr(response, "text") else str(response)
 
             await event_queue.enqueue_event(
@@ -162,7 +164,8 @@ async def create_a2a_app(
     description: str | None,
     rpc_url: str,
     sub_agent_tools: list[FunctionTool],
-    mcp_tools: list[MCPStreamableHTTPTool],
+    mcp_tool_configs: list[McpTool] | None = None,
+    agent_factory: MsafAgentFactory | None = None,
 ) -> A2AStarletteApplication:
     """Create an A2A Starlette application from a Microsoft Agent Framework agent.
 
@@ -172,14 +175,19 @@ async def create_a2a_app(
         description: Optional description of the agent
         rpc_url: The URL where the agent will be available for A2A communication
         sub_agent_tools: Pre-loaded FunctionTools wrapping remote A2A sub-agents
-        mcp_tools: Connected MCPStreamableHTTPTool instances
+        mcp_tool_configs: MCP tool configurations; per-request connections are created at execution time
+        agent_factory: Factory used to create MCP tools per request
 
     Returns:
         An A2AStarletteApplication instance
     """
     task_store = InMemoryTaskStore()
-    extra_tools: list[FunctionTool | MCPStreamableHTTPTool] = [*sub_agent_tools, *mcp_tools]
-    agent_executor = MsafAgentExecutor(agent=agent, extra_tools=extra_tools if extra_tools else None)
+    agent_executor = MsafAgentExecutor(
+        agent=agent,
+        sub_agent_tools=sub_agent_tools if sub_agent_tools else None,
+        mcp_tool_configs=mcp_tool_configs,
+        agent_factory=agent_factory,
+    )
     request_handler = DefaultRequestHandler(agent_executor=agent_executor, task_store=task_store)
 
     agent_card = AgentCard(
@@ -247,44 +255,33 @@ async def _build_app(
     sub_agents: list[SubAgent],
     tools: list[McpTool],
     factory: MsafAgentFactory,
-) -> tuple[A2AStarletteApplication, list[MCPStreamableHTTPTool]]:
-    """Load sub-agents, connect MCP tools, and return the A2A app plus tools to manage.
+) -> A2AStarletteApplication:
+    """Load sub-agents and return the A2A app.
 
-    The returned MCP tools have already been entered as async context managers;
-    the caller (lifespan) is responsible for exiting them on shutdown.
+    MCP tools are created per-request inside the executor; no connections are
+    established here.
     """
     sub_agent_tools = await factory.load_sub_agents(sub_agents)
-    mcp_tools = factory.create_mcp_tools(tools)
 
-    connected_mcp: list[MCPStreamableHTTPTool] = []
-    try:
-        for mcp_tool in mcp_tools:
-            await mcp_tool.__aenter__()
-            connected_mcp.append(mcp_tool)
-    except Exception:
-        for already_connected in reversed(connected_mcp):
-            await already_connected.__aexit__(None, None, None)
-        raise
-
-    app = await create_a2a_app(
+    return await create_a2a_app(
         agent=agent,
         name=name,
         description=description,
         rpc_url=rpc_url,
         sub_agent_tools=sub_agent_tools,
-        mcp_tools=connected_mcp,
+        mcp_tool_configs=tools if tools else None,
+        agent_factory=factory,
     )
-    return app, connected_mcp
 
 
 def to_starlette(
-    a2a_app_creator: Callable[[], Awaitable[tuple[A2AStarletteApplication, list[MCPStreamableHTTPTool]]]],
+    a2a_app_creator: Callable[[], Awaitable[A2AStarletteApplication]],
 ) -> Starlette:
     """Convert an A2A application creator to a Starlette application.
 
     Args:
-        a2a_app_creator: A callable that creates an A2AStarletteApplication and
-            connected MCP tools asynchronously during startup.
+        a2a_app_creator: A callable that creates an A2AStarletteApplication
+            asynchronously during startup.
 
     Returns:
         A Starlette application that can be run with uvicorn
@@ -295,14 +292,10 @@ def to_starlette(
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
-        a2a_app, connected_mcp = await a2a_app_creator()
+        a2a_app = await a2a_app_creator()
         # Add A2A routes to the main app
         a2a_app.add_routes_to_app(app)
-        try:
-            yield
-        finally:
-            for mcp_tool in connected_mcp:
-                await mcp_tool.__aexit__(None, None, None)
+        yield
 
     # Create a Starlette app that will be configured during startup
     starlette_app = Starlette(lifespan=lifespan)
