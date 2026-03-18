@@ -28,3 +28,10 @@ check-fix: build
 	$(MAKE) -C shared check-fix
 	$(MAKE) -C adk check-fix
 	$(MAKE) -C msaf check-fix
+
+
+.PHONY: update
+update:
+	$(MAKE) -C shared update
+	$(MAKE) -C adk update
+	$(MAKE) -C msaf update

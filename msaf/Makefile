@@ -23,3 +23,8 @@ check: build
 check-fix: build
 	uv run ruff format
 	uv run ruff check --fix
+
+
+.PHONY: update
+update:
+	uv sync -U
