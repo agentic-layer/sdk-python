@@ -86,7 +86,7 @@ class MsafAgentFactory:
 
     def __init__(
         self,
-        timeout: httpx.Timeout = httpx.Timeout(timeout=10),
+        timeout: httpx.Timeout = httpx.Timeout(timeout=300),  # High timeout for potentially long-running agents
         retry: Retry = Retry(total=10, backoff_factor=0.5, max_backoff_wait=15),
     ) -> None:
         self.timeout = timeout
