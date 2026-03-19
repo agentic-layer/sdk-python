@@ -26,7 +26,7 @@ from a2a.types import (
     TextPart,
 )
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
-from agent_framework import SupportsAgentRun
+from agent_framework import AgentSession, SupportsAgentRun
 from agent_framework._mcp import MCPStreamableHTTPTool
 from agent_framework._tools import FunctionTool
 from agenticlayer.shared.config import McpTool, SubAgent
@@ -62,6 +62,7 @@ class MsafAgentExecutor(AgentExecutor):
         self._sub_agent_tools: list[FunctionTool] = sub_agent_tools or []
         self._mcp_tool_configs: list[McpTool] = mcp_tool_configs or []
         self._agent_factory = agent_factory
+        self._sessions: dict[str, AgentSession] = {}
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Execute the agent and publish results to the event queue."""
@@ -104,7 +105,14 @@ class MsafAgentExecutor(AgentExecutor):
                         mcp_tools.append(mcp_tool)
 
                 all_tools: list[FunctionTool | MCPStreamableHTTPTool] = [*self._sub_agent_tools, *mcp_tools]
-                response = await self._agent.run(user_input, tools=all_tools if all_tools else None)
+
+                # Look up or create a session for this context to preserve conversation history
+                session = self._sessions.get(context_id)
+                if session is None:
+                    session = self._agent.create_session(session_id=context_id)
+                    self._sessions[context_id] = session
+
+                response = await self._agent.run(user_input, session=session, tools=all_tools if all_tools else None)
             response_text = response.text if hasattr(response, "text") else str(response)
 
             await event_queue.enqueue_event(

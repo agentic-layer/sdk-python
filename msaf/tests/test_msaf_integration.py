@@ -1,5 +1,6 @@
 """Integration tests for the Microsoft Agent Framework A2A adapter."""
 
+import uuid
 from typing import Any
 
 import httpx
@@ -15,7 +16,7 @@ from starlette.testclient import TestClient
 
 from agenticlayer.msaf.agent import MsafAgentFactory
 from agenticlayer.msaf.agent_to_a2a import to_a2a
-from tests.fixtures.mock_client import create_mock_agent
+from tests.fixtures.mock_client import MockChatClient, create_mock_agent
 from tests.utils.helpers import create_asgi_request_handler, create_send_message_request, verify_jsonrpc_response
 
 
@@ -163,6 +164,77 @@ class TestMsafAgentIntegration:
             assert response.status_code == 200
             result = verify_jsonrpc_response(response.json())
             assert result["status"]["state"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_conversation_history_preserved_across_messages(self, msaf_app_factory: Any) -> None:
+        """Test that messages with the same contextId share conversation history."""
+
+        # Given: A mock agent with a client that records received messages
+        mock_client = MockChatClient(response_text="First response")
+        from agent_framework import Agent
+
+        agent: Agent[Any] = Agent(
+            client=mock_client,
+            name="history_agent",
+            description="Test agent",
+            instructions="You are a test agent.",
+        )
+
+        context_id = str(uuid.uuid4())
+
+        async with msaf_app_factory(agent, name="history_agent") as app:
+            client = TestClient(app)
+
+            # When: Sending a first message
+            request1 = create_send_message_request("Hello, my name is Alice!", context_id=context_id)
+            response1 = client.post("/", json=request1)
+            assert response1.status_code == 200
+            verify_jsonrpc_response(response1.json())
+
+            # And: Sending a second message with the same contextId
+            mock_client.set_response("Second response")
+            request2 = create_send_message_request("What is my name?", context_id=context_id)
+            response2 = client.post("/", json=request2)
+            assert response2.status_code == 200
+            verify_jsonrpc_response(response2.json())
+
+            # Then: The second call should have received conversation history
+            # (more messages than just the current user input)
+            assert len(mock_client.received_messages) == 2
+            second_call_messages = mock_client.received_messages[1]
+            assert len(second_call_messages) > 1, (
+                f"Second call should include conversation history, but only got {len(second_call_messages)} message(s)"
+            )
+
+    @pytest.mark.asyncio
+    async def test_different_context_ids_have_separate_history(self, msaf_app_factory: Any) -> None:
+        """Test that messages with different contextIds do not share history."""
+
+        # Given: A mock agent
+        mock_client = MockChatClient(response_text="Response")
+        from agent_framework import Agent
+
+        agent: Agent[Any] = Agent(
+            client=mock_client,
+            name="isolation_agent",
+            description="Test agent",
+            instructions="You are a test agent.",
+        )
+
+        async with msaf_app_factory(agent, name="isolation_agent") as app:
+            client = TestClient(app)
+
+            # When: Sending messages with different contextIds
+            request1 = create_send_message_request("Message 1", context_id=str(uuid.uuid4()))
+            client.post("/", json=request1)
+
+            request2 = create_send_message_request("Message 2", context_id=str(uuid.uuid4()))
+            client.post("/", json=request2)
+
+            # Then: Each call should have received only its own message (no shared history)
+            assert len(mock_client.received_messages) == 2
+            assert len(mock_client.received_messages[0]) == 1
+            assert len(mock_client.received_messages[1]) == 1
 
     @pytest.mark.asyncio
     async def test_with_tool_server(

@@ -11,6 +11,7 @@ class MockChatClient(BaseChatClient[Any]):
 
     def __init__(self, response_text: str = "Hello from mock agent!") -> None:
         self._response_text = response_text
+        self.received_messages: list[Sequence[Message]] = []
 
     def set_response(self, response_text: str) -> None:
         """Set the response text for the mock client."""
@@ -24,6 +25,8 @@ class MockChatClient(BaseChatClient[Any]):
         options: Any = None,
         **kwargs: Any,
     ) -> Awaitable[ChatResponse[Any]]:
+        self.received_messages.append(messages)
+
         async def _respond() -> ChatResponse[Any]:
             return ChatResponse(
                 messages=[Message("assistant", [self._response_text])],

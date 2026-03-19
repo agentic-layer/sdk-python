@@ -8,10 +8,13 @@ import httpx
 from httpx import ASGITransport
 
 
-def create_send_message_request(message_text: str = "Hello, agent!") -> dict[str, Any]:
+def create_send_message_request(
+    message_text: str = "Hello, agent!",
+    context_id: str | None = None,
+) -> dict[str, Any]:
     """Create an A2A send message request."""
     message_id = str(uuid.uuid4())
-    context_id = str(uuid.uuid4())
+    context_id = context_id or str(uuid.uuid4())
     return {
         "jsonrpc": "2.0",
         "id": 1,
