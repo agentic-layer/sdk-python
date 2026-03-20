@@ -104,7 +104,13 @@ class MsafAgentExecutor(AgentExecutor):
                         await stack.enter_async_context(mcp_tool)
                         mcp_tools.append(mcp_tool)
 
-                all_tools: list[FunctionTool | MCPStreamableHTTPTool] = [*self._sub_agent_tools, *mcp_tools]
+                # Flatten MCPStreamableHTTPTool into their underlying FunctionTool
+                # instances so that the session's context-provider pipeline does not
+                # encounter raw MCPStreamableHTTPTool objects (which are not JSON
+                # serializable) during option merging.
+                all_tools: list[FunctionTool] = list(self._sub_agent_tools)
+                for mcp_tool in mcp_tools:
+                    all_tools.extend(mcp_tool.functions)
 
                 # Look up or create a session for this context to preserve conversation history
                 session = self._sessions.get(context_id)
