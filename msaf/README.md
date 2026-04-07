@@ -10,12 +10,12 @@ agent into an instrumented A2A Starlette web application.
 ```python
 import os
 from agent_framework import Agent
-from agent_framework_openai import OpenAIChatClient
+from agent_framework_openai import OpenAIChatCompletionClient
 from agenticlayer.msaf import create_metrics_middleware
 from agenticlayer.msaf.agent_to_a2a import to_a2a
 
 agent = Agent(
-    client=OpenAIChatClient(
+    client=OpenAIChatCompletionClient(
         model=os.environ.get("AGENT_MODEL", "gemini-2.5-flash"),
         base_url=os.environ.get("LITELLM_PROXY_API_BASE"),
         api_key=os.environ.get("LITELLM_PROXY_API_KEY"),
@@ -71,11 +71,11 @@ Add the metrics middleware to your agent:
 ```python
 import os
 from agent_framework import Agent
-from agent_framework_openai import OpenAIChatClient
+from agent_framework_openai import OpenAIChatCompletionClient
 from agenticlayer.msaf import create_metrics_middleware
 
 agent = Agent(
-    client=OpenAIChatClient(
+    client=OpenAIChatCompletionClient(
         model=os.environ.get("AGENT_MODEL", "gemini-2.5-flash"),
         base_url=os.environ.get("LITELLM_PROXY_API_BASE"),
         api_key=os.environ.get("LITELLM_PROXY_API_KEY"),
@@ -90,10 +90,10 @@ If you already have other middleware, combine them:
 ```python
 import os
 from agent_framework import Agent
-from agent_framework_openai import OpenAIChatClient
+from agent_framework_openai import OpenAIChatCompletionClient
 
 agent = Agent(
-    client=OpenAIChatClient(
+    client=OpenAIChatCompletionClient(
         model=os.environ.get("AGENT_MODEL", "gemini-2.5-flash"),
         base_url=os.environ.get("LITELLM_PROXY_API_BASE"),
         api_key=os.environ.get("LITELLM_PROXY_API_KEY"),
