@@ -7,8 +7,12 @@ dependencies = [
     "agentic-layer-sdk",
     "agent-framework-core>=1.0.0",
     "agent-framework-openai>=1.0.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.40",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.40",
+    "opentelemetry-instrumentation-starlette>=0.61b0",
+    "opentelemetry-instrumentation-httpx>=0.61b0",
+    "opentelemetry-instrumentation-logging>=0.61b0",
     "httpx-retries>=0.4.5",
-    "a2a-sdk[http-server]>=0.3.25",
     "mcp>=1.27.0",
 ]
 
