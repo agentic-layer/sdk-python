@@ -2,17 +2,24 @@
 
 Microsoft Agent Framework adapter for the Agentic Layer SDK.
 
-This package provides utilities to convert a [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) agent into an instrumented A2A Starlette web application.
+This package provides utilities to convert a [Microsoft Agent Framework](https://github.com/microsoft/agent-framework)
+agent into an instrumented A2A Starlette web application.
 
 ## Usage
 
 ```python
+import os
 from agent_framework import Agent
-from agenticlayer.msaf import create_metrics_middleware, create_openai_client
+from agent_framework_openai import OpenAIChatClient
+from agenticlayer.msaf import create_metrics_middleware
 from agenticlayer.msaf.agent_to_a2a import to_a2a
 
 agent = Agent(
-    client=create_openai_client(),
+    client=OpenAIChatClient(
+        model=os.environ.get("AGENT_MODEL", "gemini-2.5-flash"),
+        base_url=os.environ.get("LITELLM_PROXY_API_BASE"),
+        api_key=os.environ.get("LITELLM_PROXY_API_KEY"),
+    ),
     name="MyAgent",
     instructions="You are a helpful assistant.",
     middleware=create_metrics_middleware(),
@@ -22,20 +29,6 @@ app = to_a2a(agent, name="MyAgent", rpc_url="http://localhost:8000/")
 ```
 
 ## Configuration
-
-### OpenAI-compatible gateway (LiteLLM proxy)
-
-Set the following environment variables to point the agent at an OpenAI-compatible gateway
-such as [LiteLLM proxy](https://docs.litellm.ai/docs/proxy/quick_start):
-
-| Variable | Description |
-|---|---|
-| `LITELLM_PROXY_API_BASE` | Base URL of the gateway, e.g. `http://litellm-proxy:4000` |
-| `LITELLM_PROXY_API_KEY` | API key for the gateway |
-| `OPENAI_CHAT_MODEL_ID` | Model name to use, e.g. `gpt-4o` |
-
-`create_openai_client()` reads these variables automatically and passes them to
-`OpenAIChatClient` as `base_url` and `api_key`.
 
 ## Observability
 
@@ -59,28 +52,34 @@ The SDK emits the following OpenTelemetry metrics:
 
 **Built-in** (provided by Agent Framework telemetry layers, enabled by `setup_otel()`):
 
-| Metric | Type | Description |
-|---|---|---|
-| `gen_ai.client.token.usage` | Histogram | Input and output token counts per LLM call |
-| `gen_ai.client.operation.duration` | Histogram | Duration of LLM / agent operations |
+| Metric                             | Type      | Description                                |
+|------------------------------------|-----------|--------------------------------------------|
+| `gen_ai.client.token.usage`        | Histogram | Input and output token counts per LLM call |
+| `gen_ai.client.operation.duration` | Histogram | Duration of LLM / agent operations         |
 
 **Custom** (provided by `create_metrics_middleware()`, must be added to the agent):
 
-| Metric | Type | Description |
-|---|---|---|
-| `agent.invocations` | Counter | Number of agent invocations |
-| `agent.llm.calls` | Counter | Number of LLM calls |
-| `agent.tool.calls` | Counter | Number of tool calls |
-| `agent.errors` | Counter | Number of errors (with `error_source` attribute) |
+| Metric              | Type    | Description                                      |
+|---------------------|---------|--------------------------------------------------|
+| `agent.invocations` | Counter | Number of agent invocations                      |
+| `agent.llm.calls`   | Counter | Number of LLM calls                              |
+| `agent.tool.calls`  | Counter | Number of tool calls                             |
+| `agent.errors`      | Counter | Number of errors (with `error_source` attribute) |
 
 Add the metrics middleware to your agent:
 
 ```python
+import os
 from agent_framework import Agent
-from agenticlayer.msaf import create_metrics_middleware, create_openai_client
+from agent_framework_openai import OpenAIChatClient
+from agenticlayer.msaf import create_metrics_middleware
 
 agent = Agent(
-    client=create_openai_client(),
+    client=OpenAIChatClient(
+        model=os.environ.get("AGENT_MODEL", "gemini-2.5-flash"),
+        base_url=os.environ.get("LITELLM_PROXY_API_BASE"),
+        api_key=os.environ.get("LITELLM_PROXY_API_KEY"),
+    ),
     instructions="You are a helpful assistant.",
     middleware=create_metrics_middleware(),
 )
@@ -89,8 +88,16 @@ agent = Agent(
 If you already have other middleware, combine them:
 
 ```python
+import os
+from agent_framework import Agent
+from agent_framework_openai import OpenAIChatClient
+
 agent = Agent(
-    client=create_openai_client(),
+    client=OpenAIChatClient(
+        model=os.environ.get("AGENT_MODEL", "gemini-2.5-flash"),
+        base_url=os.environ.get("LITELLM_PROXY_API_BASE"),
+        api_key=os.environ.get("LITELLM_PROXY_API_KEY"),
+    ),
     instructions="You are a helpful assistant.",
     middleware=[MyCustomMiddleware(), *create_metrics_middleware()],
 )
