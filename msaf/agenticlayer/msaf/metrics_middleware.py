@@ -71,7 +71,7 @@ class LlmCallMetrics(ChatMiddleware):
         call_next: Callable[[], Awaitable[None]],
     ) -> None:
         options = context.options or {}
-        model: str = options.get("model_id") or getattr(context.client, "model_id", None) or "unknown"
+        model: str = options.get("model") or getattr(context.client, "model", None) or "unknown"
         attrs: dict[str, Any] = {"model": model}
         _llm_calls.add(1, attrs)
         try:

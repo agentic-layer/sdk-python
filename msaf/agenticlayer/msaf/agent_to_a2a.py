@@ -26,7 +26,7 @@ from a2a.types import (
     TextPart,
 )
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
-from agent_framework import AgentSession, SupportsAgentRun
+from agent_framework import Agent, AgentSession
 from agent_framework._mcp import MCPStreamableHTTPTool
 from agent_framework._tools import FunctionTool
 from agenticlayer.shared.config import McpTool, SubAgent
@@ -53,7 +53,7 @@ class MsafAgentExecutor(AgentExecutor):
 
     def __init__(
         self,
-        agent: SupportsAgentRun,
+        agent: Agent,
         sub_agent_tools: list[FunctionTool] | None = None,
         mcp_tool_configs: list[McpTool] | None = None,
         agent_factory: MsafAgentFactory | None = None,
@@ -173,7 +173,7 @@ class MsafAgentExecutor(AgentExecutor):
 
 
 async def create_a2a_app(
-    agent: SupportsAgentRun,
+    agent: Agent,
     name: str,
     description: str | None,
     rpc_url: str,
@@ -224,7 +224,7 @@ async def create_a2a_app(
 
 
 def to_a2a(
-    agent: SupportsAgentRun,
+    agent: Agent,
     name: str,
     rpc_url: str,
     description: str | None = None,
@@ -262,7 +262,7 @@ def to_a2a(
 
 
 async def _build_app(
-    agent: SupportsAgentRun,
+    agent: Agent,
     name: str,
     description: str | None,
     rpc_url: str,
