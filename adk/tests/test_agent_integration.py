@@ -363,6 +363,7 @@ class TestAgentIntegration:
                         "id": "call_test123",
                         "name": "add",
                         "response": {
+                            "meta": {"fastmcp": {"wrap_result": True}},
                             "content": [{"type": "text", "text": "8"}],
                             "structuredContent": {"result": 8},
                             "isError": False,
