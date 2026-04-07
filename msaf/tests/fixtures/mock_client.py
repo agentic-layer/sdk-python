@@ -10,6 +10,7 @@ class MockChatClient(BaseChatClient[Any]):
     """A mock chat client for testing that returns predefined responses."""
 
     def __init__(self, response_text: str = "Hello from mock agent!") -> None:
+        super().__init__()
         self._response_text = response_text
         self.received_messages: list[Sequence[Message]] = []
 
@@ -31,7 +32,7 @@ class MockChatClient(BaseChatClient[Any]):
             return ChatResponse(
                 messages=[Message("assistant", [self._response_text])],
                 finish_reason="stop",
-                model_id="mock-model",
+                model="mock-model",
             )
 
         return _respond()

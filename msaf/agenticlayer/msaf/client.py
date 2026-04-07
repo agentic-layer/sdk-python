@@ -6,7 +6,7 @@ from agent_framework.openai import OpenAIChatClient
 
 
 def create_openai_client(
-    model_id: str | None = None,
+    model: str | None = None,
 ) -> OpenAIChatClient:
     """Create an OpenAIChatClient configured from environment variables.
 
@@ -20,10 +20,10 @@ def create_openai_client(
       parameter. Falls back to the ``OPENAI_API_KEY`` env var when not set.
     - ``OPENAI_CHAT_MODEL_ID``: Model name to use (e.g. ``gpt-4o``). Handled
       natively by :class:`~agent_framework.openai.OpenAIChatClient`; takes effect
-      even when ``model_id`` is not passed to this function.
+      even when ``model`` is not passed to this function.
 
     Args:
-        model_id: Optional model identifier override. When ``None``, the
+        model: Optional model identifier override. When ``None``, the
             ``OPENAI_CHAT_MODEL_ID`` environment variable is used automatically
             by :class:`~agent_framework.openai.OpenAIChatClient`.
 
@@ -52,7 +52,7 @@ def create_openai_client(
     api_key = os.environ.get("LITELLM_PROXY_API_KEY")
 
     return OpenAIChatClient(
-        model_id=model_id,
+        model=model,
         base_url=base_url,
         api_key=api_key,
     )
