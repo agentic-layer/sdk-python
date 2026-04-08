@@ -88,16 +88,6 @@ class AgentFactory:
         mcp_tools = self.load_tools(tools)
         all_tools: list[ToolUnion] = agent_tools + mcp_tools
 
-        # The ADK currently only adds the agent as a function with the agent name to the instructions.
-        # The description is not included. So we manually add the descriptions here.
-        if agent_tools:
-            agent_tool_instructions = "\n\nFollowing agents are available as tools:\n"
-            agent_tool_instructions += "\n".join(
-                [f"- '{agent_tool.name}': {agent_tool.description}" for agent_tool in agent_tools]
-            )
-            agent_tool_instructions += "\nYou can use them by calling the tool with the agent name.\n"
-            agent.instruction = f"{agent.instruction}{agent_tool_instructions}"
-
         agent.sub_agents += agents
         agent.tools += all_tools
         return agent
