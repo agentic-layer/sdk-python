@@ -6,7 +6,7 @@ requires-python = ">=3.14,<3.15"
 dependencies = [
     "loguru>=0.7.3",
     "pydantic>=2",
-    "starlette>=0.52.1,<1.0.0",
+    "starlette>=1.0.0,<1.1.0",
     "a2a-sdk[http-server]>=0.3.25",
     "opentelemetry-exporter-otlp-proto-http>=1.38.0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.38.0",
