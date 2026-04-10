@@ -70,6 +70,7 @@ def parse_tools(tools_config: str) -> list[McpTool]:
             name=name,
             url=config["url"],
             timeout=config.get("timeout", 30),
+            propagate_headers=config.get("propagate_headers", []),
         )
         for name, config in tools_map.items()
     ]
