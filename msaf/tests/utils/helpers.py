@@ -54,3 +54,31 @@ def verify_jsonrpc_response(data: dict[str, Any], expected_id: int = 1) -> Any:
     assert "result" in data
     result: Any = data["result"]
     return result
+
+
+def create_header_capturing_handler(
+    mcp_manager: Any, base_url: str, headers_list: list[dict[str, str]]
+) -> Callable[[httpx.Request], Awaitable[httpx.Response]]:
+    """Create a handler that captures headers and forwards requests to an MCP app.
+
+    Args:
+        mcp_manager: The LifespanManager wrapping the MCP app
+        base_url: The base URL for the MCP server
+        headers_list: List to append captured headers to
+
+    Returns:
+        An async handler function for use with respx mocking
+    """
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        headers_list.append(dict(request.headers))
+        transport = httpx.ASGITransport(app=mcp_manager.app)
+        async with httpx.AsyncClient(transport=transport, base_url=base_url) as client:
+            return await client.request(
+                method=request.method,
+                url=str(request.url),
+                headers=request.headers,
+                content=request.content,
+            )
+
+    return handler
