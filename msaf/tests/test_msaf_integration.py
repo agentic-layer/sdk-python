@@ -17,7 +17,7 @@ from starlette.testclient import TestClient
 from agenticlayer.msaf.agent import MsafAgentFactory
 from agenticlayer.msaf.agent_to_a2a import to_a2a
 from tests.fixtures.mock_client import MockChatClient, create_mock_agent
-from tests.utils.helpers import create_asgi_request_handler, create_send_message_request, verify_jsonrpc_response
+from tests.utils.helpers import create_asgi_request_handler, create_header_capturing_handler, create_send_message_request, verify_jsonrpc_response
 
 
 class TestMsafAgentIntegration:
@@ -278,3 +278,65 @@ class TestMsafAgentIntegration:
             assert response.status_code == 200
             result = verify_jsonrpc_response(response.json())
             assert "status" in result
+
+    @pytest.mark.asyncio
+    async def test_single_header_propagated_to_mcp_tools(
+        self,
+        msaf_app_factory: Any,
+        respx_mock: respx.MockRouter,
+    ) -> None:
+        """Test that a configured header is passed from A2A request to MCP tool calls."""
+
+        # Given: MCP server with 'add' tool
+        mcp = FastMCP("HeaderVerifier")
+        received_headers: list[dict[str, str]] = []
+
+        @mcp.tool()
+        def add(a: int, b: int) -> int:
+            """Add two numbers."""
+            return a + b
+
+        mcp_server_url = "http://test-mcp-header.local"
+        mcp_app = mcp.http_app(path="/mcp")
+
+        async with LifespanManager(mcp_app) as mcp_manager:
+            handler = create_header_capturing_handler(mcp_manager, mcp_server_url, received_headers)
+            respx_mock.route(host="test-mcp-header.local").mock(side_effect=handler)
+
+            # When: Create agent with MCP tool configured to propagate X-External-Token
+            test_agent = create_mock_agent(name="test_agent", response_text="Done!")
+            tools = [
+                McpTool(
+                    name="calc",
+                    url=AnyHttpUrl(f"{mcp_server_url}/mcp"),
+                    timeout=30,
+                    propagate_headers=["X-External-Token"],
+                )
+            ]
+            external_token = "secret-api-token-12345"  # nosec B105
+
+            async with msaf_app_factory(test_agent, tools=tools) as app:
+                client = TestClient(app)
+                response = client.post(
+                    "/",
+                    json=create_send_message_request("Calculate 5 + 3"),
+                    headers={"X-External-Token": external_token},
+                )
+
+            # Then: Verify response is successful
+            assert response.status_code == 200
+            result = verify_jsonrpc_response(response.json())
+            assert result["status"]["state"] == "completed"
+
+            # Then: Verify X-External-Token header was passed to MCP server
+            assert len(received_headers) > 0, "MCP server should have received requests"
+            tool_call_headers = [
+                h for h in received_headers if "x-external-token" in h or "X-External-Token" in h
+            ]
+            assert len(tool_call_headers) > 0, (
+                f"At least one request should have X-External-Token header. "
+                f"Received {len(received_headers)} requests total."
+            )
+            for headers in tool_call_headers:
+                token_value = headers.get("X-External-Token") or headers.get("x-external-token")
+                assert token_value == external_token
