@@ -120,26 +120,44 @@ class MsafAgentFactory:
             tools.append(tool)
         return tools
 
-    def create_mcp_tools(self, mcp_tools: list[McpTool]) -> list[MCPStreamableHTTPTool]:
+    def create_mcp_tools(
+        self, mcp_tools: list[McpTool], request_headers: dict[str, str] | None = None
+    ) -> list[MCPStreamableHTTPTool]:
         """Create MCPStreamableHTTPTool instances (not yet connected).
 
         The returned tools must be entered as async context managers (i.e. ``async with tool``)
         before they can be used with an agent.
 
+        If *request_headers* is supplied and a tool has a non-empty ``propagate_headers``
+        configuration, only the matching headers are forwarded to that MCP server via
+        a ``header_provider`` closure.
+
         Args:
             mcp_tools: List of MCP tool configurations.
+            request_headers: Optional dict of HTTP headers from the incoming A2A request.
 
         Returns:
             A list of unconnected MCPStreamableHTTPTool instances.
         """
         tools: list[MCPStreamableHTTPTool] = []
         for mcp_tool in mcp_tools:
+            # Filter headers for this specific tool (case-insensitive match, config casing on output)
+            filtered_headers: dict[str, str] = {}
+            if request_headers and mcp_tool.propagate_headers:
+                propagate_lower = {h.lower(): h for h in mcp_tool.propagate_headers}
+                for key, value in request_headers.items():
+                    if key.lower() in propagate_lower:
+                        filtered_headers[propagate_lower[key.lower()]] = value
+
+            header_provider = (lambda h: lambda _kwargs: h)(filtered_headers) if filtered_headers else None
+
             logger.info("Creating MCP tool %s at %s", mcp_tool.name, mcp_tool.url)
             tools.append(
                 MCPStreamableHTTPTool(
                     name=mcp_tool.name,
                     url=str(mcp_tool.url),
                     request_timeout=mcp_tool.timeout,
+                    header_provider=header_provider,
                 )
             )
         return tools
