@@ -100,7 +100,12 @@ class MsafAgentExecutor(AgentExecutor):
             async with contextlib.AsyncExitStack() as stack:
                 mcp_tools: list[MCPStreamableHTTPTool] = []
                 if self._mcp_tool_configs and self._agent_factory:
-                    for mcp_tool in self._agent_factory.create_mcp_tools(self._mcp_tool_configs):
+                    # Extract request headers for propagation to MCP tools
+                    request_headers: dict[str, str] = {}
+                    if context.call_context and "headers" in context.call_context.state:
+                        request_headers = context.call_context.state["headers"]
+
+                    for mcp_tool in self._agent_factory.create_mcp_tools(self._mcp_tool_configs, request_headers):
                         await stack.enter_async_context(mcp_tool)
                         mcp_tools.append(mcp_tool)
 

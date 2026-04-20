@@ -130,7 +130,7 @@ class MsafAgentFactory:
 
         If *request_headers* is supplied and a tool has a non-empty ``propagate_headers``
         configuration, only the matching headers are forwarded to that MCP server via
-        a ``header_provider`` closure.
+        default headers on a per-tool ``httpx.AsyncClient``.
 
         Args:
             mcp_tools: List of MCP tool configurations.
@@ -149,7 +149,11 @@ class MsafAgentFactory:
                     if key.lower() in propagate_lower:
                         filtered_headers[propagate_lower[key.lower()]] = value
 
-            header_provider = (lambda h: lambda _kwargs: h)(filtered_headers) if filtered_headers else None
+            # Build an httpx client with the filtered headers so they are sent on
+            # every request (session setup *and* tool calls).
+            http_client = (
+                httpx.AsyncClient(headers=filtered_headers, follow_redirects=True) if filtered_headers else None
+            )
 
             logger.info("Creating MCP tool %s at %s", mcp_tool.name, mcp_tool.url)
             tools.append(
@@ -157,7 +161,7 @@ class MsafAgentFactory:
                     name=mcp_tool.name,
                     url=str(mcp_tool.url),
                     request_timeout=mcp_tool.timeout,
-                    header_provider=header_provider,
+                    http_client=http_client,
                 )
             )
         return tools

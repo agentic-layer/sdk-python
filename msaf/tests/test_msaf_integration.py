@@ -17,7 +17,12 @@ from starlette.testclient import TestClient
 from agenticlayer.msaf.agent import MsafAgentFactory
 from agenticlayer.msaf.agent_to_a2a import to_a2a
 from tests.fixtures.mock_client import MockChatClient, create_mock_agent
-from tests.utils.helpers import create_asgi_request_handler, create_header_capturing_handler, create_send_message_request, verify_jsonrpc_response
+from tests.utils.helpers import (
+    create_asgi_request_handler,
+    create_header_capturing_handler,
+    create_send_message_request,
+    verify_jsonrpc_response,
+)
 
 
 class TestMsafAgentIntegration:
