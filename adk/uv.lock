@@ -18,19 +18,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/dd/d5/51f4ee1bf3b736add42a542d3c8a3fd3fa85f3d36c17972127defc46c26f/a2a_sdk-0.3.26-py3-none-any.whl", hash = "sha256:754e0573f6d33b225c1d8d51f640efa69cbbed7bdfb06ce9c3540ea9f58d4a91", size = 151016, upload-time = "2026-04-09T15:21:12.35Z" },
 ]
 
-[package.optional-dependencies]
-http-server = [
-    { name = "fastapi" },
-    { name = "sse-starlette" },
-    { name = "starlette" },
-]
-
 [[package]]
 name = "agentic-layer-sdk"
 version = "0.1.0"
 source = { directory = "../shared" }
 dependencies = [
-    { name = "a2a-sdk", extra = ["http-server"] },
+    { name = "httpx" },
     { name = "loguru" },
     { name = "opentelemetry-exporter-otlp-proto-grpc" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
@@ -43,7 +36,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a2a-sdk", extras = ["http-server"], specifier = ">=0.3.25" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.38.0" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.38.0" },
@@ -70,11 +63,6 @@ dependencies = [
     { name = "httpx-retries" },
     { name = "litellm" },
     { name = "openinference-instrumentation-google-adk" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc" },
-    { name = "opentelemetry-exporter-otlp-proto-http" },
-    { name = "opentelemetry-instrumentation-httpx" },
-    { name = "opentelemetry-instrumentation-logging" },
-    { name = "opentelemetry-instrumentation-starlette" },
 ]
 
 [package.dev-dependencies]
@@ -97,11 +85,6 @@ requires-dist = [
     { name = "httpx-retries", specifier = ">=0.4.5" },
     { name = "litellm", specifier = ">=1.83.0" },
     { name = "openinference-instrumentation-google-adk", specifier = ">=0.1.10" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.38.0" },
-    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.38.0" },
-    { name = "opentelemetry-instrumentation-httpx", specifier = ">=0.59b0" },
-    { name = "opentelemetry-instrumentation-logging", specifier = ">=0.59b0" },
-    { name = "opentelemetry-instrumentation-starlette", specifier = ">=0.59b0" },
 ]
 
 [package.metadata.requires-dev]

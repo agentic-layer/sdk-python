@@ -4,7 +4,6 @@ import logging
 import os
 from typing import Any, Dict
 
-from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from opentelemetry import trace
 from starlette.applications import Starlette
 
@@ -83,7 +82,13 @@ def instrument_starlette_app(app: Starlette) -> None:
     """
 
     # env needs to be set here since _excluded_urls is initialized at module import time
-    os.environ.setdefault("OTEL_PYTHON_STARLETTE_EXCLUDED_URLS", AGENT_CARD_WELL_KNOWN_PATH)
+    try:
+        from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH  # type: ignore[import-not-found]
+
+        os.environ.setdefault("OTEL_PYTHON_STARLETTE_EXCLUDED_URLS", AGENT_CARD_WELL_KNOWN_PATH)
+    except ImportError:
+        pass
+
     from opentelemetry.instrumentation.starlette import StarletteInstrumentor
 
     StarletteInstrumentor().instrument_app(
