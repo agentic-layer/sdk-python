@@ -83,6 +83,11 @@ def _function_call_data_part(
         args: Any = arguments
     elif arguments is None:
         args = {}
+    elif isinstance(arguments, str):
+        try:
+            args = json.loads(arguments)
+        except (ValueError, TypeError):
+            args = arguments
     else:
         args = str(arguments)
 

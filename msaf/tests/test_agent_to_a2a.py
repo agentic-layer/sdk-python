@@ -40,14 +40,23 @@ class TestFunctionCall:
         data, _ = _data(content)
         assert data["args"] == {}
 
-    def test_string_arguments_pass_through_as_string(self) -> None:
+    def test_json_string_arguments_decoded_to_dict(self) -> None:
         content = MsafContent.from_function_call(
             call_id="call_3",
             name="search",
             arguments='{"q": "Anna"}',
         )
         data, _ = _data(content)
-        assert data["args"] == '{"q": "Anna"}'
+        assert data["args"] == {"q": "Anna"}
+
+    def test_non_json_string_arguments_pass_through_as_string(self) -> None:
+        content = MsafContent.from_function_call(
+            call_id="call_4",
+            name="search",
+            arguments="not json",
+        )
+        data, _ = _data(content)
+        assert data["args"] == "not json"
 
     def test_exception_surfaces_in_metadata(self) -> None:
         content = MsafContent.from_function_call(
