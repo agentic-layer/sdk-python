@@ -3,10 +3,11 @@ Convert a Microsoft Agent Framework Agent to an A2A Starlette application.
 """
 
 import contextlib
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import AsyncIterator, Awaitable, Callable
+from typing import Any, AsyncIterator, Awaitable, Callable
 
 from a2a.server.agent_execution import AgentExecutor
 from a2a.server.agent_execution.context import RequestContext
@@ -17,6 +18,7 @@ from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
+    DataPart,
     Message,
     Part,
     Role,
@@ -27,6 +29,8 @@ from a2a.types import (
 )
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from agent_framework import Agent, AgentSession
+from agent_framework import Content as MsafContent
+from agent_framework import Message as MsafMessage
 from agent_framework._mcp import MCPStreamableHTTPTool
 from agent_framework._tools import FunctionTool
 from agenticlayer.shared.config import McpTool, SubAgent
@@ -42,6 +46,162 @@ class HealthCheckFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         # Check if the log message contains the well known path of the card, which is used for health checks
         return record.getMessage().find(AGENT_CARD_WELL_KNOWN_PATH) == -1
+
+
+def _to_jsonable(value: Any) -> Any:
+    """Coerce a tool result into a JSON-friendly value for ``data.response``.
+
+    - ``None`` / ``dict`` / ``list`` / ``int`` / ``float`` / ``bool`` pass through.
+    - A Pydantic model is ``model_dump``-ed.
+    - A ``str`` is best-effort JSON-decoded (MSAF's ``from_function_result``
+      stores results as ``json.dumps(result, default=str)``, so most structured
+      results arrive here as JSON strings); if decoding fails, the raw string
+      is returned.
+    - Anything else is stringified.
+    """
+    if value is None or isinstance(value, (dict, list, int, float, bool)):
+        return value
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except (ValueError, TypeError):
+            return value
+    return str(value)
+
+
+def _function_call_data_part(
+    *,
+    call_id: str | None,
+    name: str | None,
+    arguments: Any,
+    metadata: dict[str, Any],
+) -> Part:
+    """Build a tool-call ``DataPart`` shaped as ``{id, name, args}``."""
+    if isinstance(arguments, dict):
+        args: Any = arguments
+    elif arguments is None:
+        args = {}
+    else:
+        args = str(arguments)
+
+    data: dict[str, Any] = {"args": args}
+    if call_id is not None:
+        data["id"] = call_id
+    if name is not None:
+        data["name"] = name
+    return Part(root=DataPart(data=data, metadata=metadata))
+
+
+def _function_response_data_part(
+    *,
+    call_id: str | None,
+    name: str | None,
+    response: Any,
+    metadata: dict[str, Any],
+) -> Part:
+    """Build a tool-response ``DataPart`` shaped as ``{id, name, response}``."""
+    data: dict[str, Any] = {"response": _to_jsonable(response)}
+    if call_id is not None:
+        data["id"] = call_id
+    if name is not None:
+        data["name"] = name
+    return Part(root=DataPart(data=data, metadata=metadata))
+
+
+def _msaf_content_to_a2a_part(content: MsafContent) -> Part:
+    """Convert an MSAF Content object to an A2A Part."""
+    if content.type == "text":
+        return Part(root=TextPart(text=content.text or ""))
+
+    if content.type == "function_call":
+        metadata: dict[str, Any] = {"msaf_type": "function_call"}
+        if content.exception is not None:
+            metadata["exception"] = content.exception
+        return _function_call_data_part(
+            call_id=content.call_id,
+            name=content.name,
+            arguments=content.arguments,
+            metadata=metadata,
+        )
+
+    if content.type == "mcp_server_tool_call":
+        metadata = {"msaf_type": "mcp_server_tool_call"}
+        if content.server_name is not None:
+            metadata["server_name"] = content.server_name
+        return _function_call_data_part(
+            call_id=content.call_id,
+            name=content.tool_name,
+            arguments=content.arguments,
+            metadata=metadata,
+        )
+
+    if content.type == "function_result":
+        metadata = {"msaf_type": "function_result"}
+        if not content.result and content.exception is not None:
+            response: Any = {"error": str(content.exception)}
+        else:
+            response = content.result
+            if content.exception is not None:
+                metadata["exception"] = content.exception
+        return _function_response_data_part(
+            call_id=content.call_id,
+            name=content.name,
+            response=response,
+            metadata=metadata,
+        )
+
+    if content.type == "mcp_server_tool_result":
+        return _function_response_data_part(
+            call_id=content.call_id,
+            name=content.tool_name,
+            response=content.output,
+            metadata={"msaf_type": "mcp_server_tool_result"},
+        )
+
+    # Fallback for non-tool content types (error, usage, text_reasoning,
+    # code_interpreter_*, image_generation_*, hosted_*, function_approval_*,
+    # oauth_consent_*). Preserves the previous flat-DataPart behaviour.
+    data: dict[str, Any] = {"type": content.type}
+    if content.name is not None:
+        data["name"] = content.name
+    if content.call_id is not None:
+        data["call_id"] = content.call_id
+    if content.arguments is not None:
+        data["arguments"] = content.arguments if isinstance(content.arguments, dict) else str(content.arguments)
+    if content.result is not None:
+        data["result"] = str(content.result)
+    if content.tool_name is not None:
+        data["tool_name"] = content.tool_name
+    if content.server_name is not None:
+        data["server_name"] = content.server_name
+    if content.exception is not None:
+        data["exception"] = content.exception
+    if content.output is not None:
+        data["output"] = str(content.output)
+
+    return Part(root=DataPart(data=data))
+
+
+def _msaf_messages_to_a2a(messages: list[MsafMessage]) -> list[Message]:
+    """Convert a list of MSAF Messages to A2A Messages."""
+    a2a_messages: list[Message] = []
+    for msg in messages:
+        if msg.role == "system":
+            continue
+        role = Role.user if msg.role == "user" else Role.agent
+        parts = [_msaf_content_to_a2a_part(c) for c in msg.contents]
+        if not parts:
+            continue
+        a2a_messages.append(
+            Message(
+                message_id=msg.message_id or str(uuid.uuid4()),
+                role=role,
+                parts=parts,
+            )
+        )
+    return a2a_messages
 
 
 class MsafAgentExecutor(AgentExecutor):
@@ -119,7 +279,35 @@ class MsafAgentExecutor(AgentExecutor):
                     self._sessions[context_id] = session
 
                 response = await self._agent.run(user_input, session=session, tools=all_tools if all_tools else None)
-            response_text = response.text if hasattr(response, "text") else str(response)
+
+            a2a_messages = _msaf_messages_to_a2a(response.messages) if response.messages else []
+
+            # Emit intermediate messages (tool calls/results) as working events
+            # so they end up in the task history.
+            for intermediate_msg in a2a_messages[:-1]:
+                await event_queue.enqueue_event(
+                    TaskStatusUpdateEvent(
+                        task_id=task_id,
+                        context_id=context_id,
+                        status=TaskStatus(
+                            state=TaskState.working,
+                            message=intermediate_msg,
+                            timestamp=datetime.now(timezone.utc).isoformat(),
+                        ),
+                        final=False,
+                    )
+                )
+
+            # Use the last converted message if available, otherwise fall back to text
+            if a2a_messages:
+                final_message = a2a_messages[-1]
+            else:
+                response_text = response.text if hasattr(response, "text") else str(response)
+                final_message = Message(
+                    message_id=str(uuid.uuid4()),
+                    role=Role.agent,
+                    parts=[Part(root=TextPart(text=response_text))],
+                )
 
             await event_queue.enqueue_event(
                 TaskStatusUpdateEvent(
@@ -127,11 +315,7 @@ class MsafAgentExecutor(AgentExecutor):
                     context_id=context_id,
                     status=TaskStatus(
                         state=TaskState.completed,
-                        message=Message(
-                            message_id=str(uuid.uuid4()),
-                            role=Role.agent,
-                            parts=[Part(root=TextPart(text=response_text))],
-                        ),
+                        message=final_message,
                         timestamp=datetime.now(timezone.utc).isoformat(),
                     ),
                     final=True,
