@@ -60,7 +60,7 @@ name = "agentic-layer-sdk"
 version = "0.1.0"
 source = { directory = "../shared" }
 dependencies = [
-    { name = "a2a-sdk", extra = ["http-server"] },
+    { name = "httpx" },
     { name = "loguru" },
     { name = "opentelemetry-exporter-otlp-proto-grpc" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
@@ -73,7 +73,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a2a-sdk", extras = ["http-server"], specifier = ">=0.3.25" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.38.0" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.38.0" },
@@ -95,7 +95,7 @@ name = "agentic-layer-sdk-msaf"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "a2a-sdk" },
+    { name = "a2a-sdk", extra = ["http-server"] },
     { name = "agent-framework-core" },
     { name = "agent-framework-openai" },
     { name = "agentic-layer-sdk" },
@@ -123,7 +123,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a2a-sdk", specifier = ">=1.0.2" },
+    { name = "a2a-sdk", extras = ["http-server"], specifier = ">=1.0.2" },
     { name = "agent-framework-core", specifier = ">=1.0.0" },
     { name = "agent-framework-openai", specifier = ">=1.0.0" },
     { name = "agentic-layer-sdk", directory = "../shared" },

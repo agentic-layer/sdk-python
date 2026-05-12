@@ -14,7 +14,7 @@ dependencies = [
     "opentelemetry-instrumentation-logging>=0.61b0",
     "httpx-retries>=0.4.5",
     "mcp>=1.27.0",
-    "a2a-sdk>=1.0.2"
+    "a2a-sdk[http-server]>=1.0.2"
 ]
 
 [dependency-groups]

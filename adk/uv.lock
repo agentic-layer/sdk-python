@@ -30,7 +30,7 @@ name = "agentic-layer-sdk"
 version = "0.1.0"
 source = { directory = "../shared" }
 dependencies = [
-    { name = "a2a-sdk", extra = ["http-server"] },
+    { name = "httpx" },
     { name = "loguru" },
     { name = "opentelemetry-exporter-otlp-proto-grpc" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
@@ -43,7 +43,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a2a-sdk", extras = ["http-server"], specifier = ">=0.3.25" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.38.0" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.38.0" },
@@ -65,6 +65,7 @@ name = "agentic-layer-sdk-adk"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "a2a-sdk", extra = ["http-server"] },
     { name = "agentic-layer-sdk" },
     { name = "google-adk", extra = ["a2a"] },
     { name = "httpx-retries" },
@@ -92,6 +93,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "a2a-sdk", extras = ["http-server"], specifier = ">=0.3.25,<0.4" },
     { name = "agentic-layer-sdk", directory = "../shared" },
     { name = "google-adk", extras = ["a2a"], specifier = ">=1.26.0" },
     { name = "httpx-retries", specifier = ">=0.4.5" },

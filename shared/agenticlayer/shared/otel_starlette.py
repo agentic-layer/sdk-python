@@ -4,10 +4,10 @@ import logging
 import os
 from typing import Any, Dict
 
-from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from opentelemetry import trace
 from starlette.applications import Starlette
 
+from .constants import AGENT_CARD_WELL_KNOWN_PATH
 from .otel import _decode_body, _is_text_content
 
 _logger = logging.getLogger(__name__)
