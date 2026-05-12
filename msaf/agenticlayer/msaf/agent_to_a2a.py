@@ -6,34 +6,36 @@ import contextlib
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Awaitable, Callable
 
+from a2a.helpers import new_text_message
 from a2a.server.agent_execution import AgentExecutor
 from a2a.server.agent_execution.context import RequestContext
-from a2a.server.apps import A2AStarletteApplication
 from a2a.server.events.event_queue import EventQueue
 from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
-    DataPart,
+    AgentInterface,
     Message,
     Part,
     Role,
+    Task,
     TaskState,
     TaskStatus,
     TaskStatusUpdateEvent,
-    TextPart,
 )
-from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
+from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH, PROTOCOL_VERSION_0_3, TransportProtocol
 from agent_framework import Agent, AgentSession
 from agent_framework import Content as MsafContent
 from agent_framework import Message as MsafMessage
 from agent_framework._mcp import MCPStreamableHTTPTool
 from agent_framework._tools import FunctionTool
 from agenticlayer.shared.config import McpTool, SubAgent
+from google.protobuf.json_format import ParseDict
+from google.protobuf.struct_pb2 import Value
 from httpx_retries import Retry
 from starlette.applications import Starlette
 
@@ -66,9 +68,13 @@ def _to_jsonable(value: Any) -> Any:
     if isinstance(value, str):
         try:
             return json.loads(value)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return value
     return str(value)
+
+
+def _data_part(data: dict[str, Any], metadata: dict[str, Any]) -> Part:
+    return Part(data=ParseDict(data, Value()), metadata=metadata)
 
 
 def _function_call_data_part(
@@ -78,7 +84,7 @@ def _function_call_data_part(
     arguments: Any,
     metadata: dict[str, Any],
 ) -> Part:
-    """Build a tool-call ``DataPart`` shaped as ``{id, name, args}``."""
+    """Build a tool-call ``Part`` shaped as ``{id, name, args}``."""
     if isinstance(arguments, dict):
         args: Any = arguments
     elif arguments is None:
@@ -86,7 +92,7 @@ def _function_call_data_part(
     elif isinstance(arguments, str):
         try:
             args = json.loads(arguments)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             args = arguments
     else:
         args = str(arguments)
@@ -96,7 +102,7 @@ def _function_call_data_part(
         data["id"] = call_id
     if name is not None:
         data["name"] = name
-    return Part(root=DataPart(data=data, metadata=metadata))
+    return _data_part(data, metadata)
 
 
 def _function_response_data_part(
@@ -106,19 +112,19 @@ def _function_response_data_part(
     response: Any,
     metadata: dict[str, Any],
 ) -> Part:
-    """Build a tool-response ``DataPart`` shaped as ``{id, name, response}``."""
+    """Build a tool-response ``Part`` shaped as ``{id, name, response}``."""
     data: dict[str, Any] = {"response": _to_jsonable(response)}
     if call_id is not None:
         data["id"] = call_id
     if name is not None:
         data["name"] = name
-    return Part(root=DataPart(data=data, metadata=metadata))
+    return _data_part(data, metadata)
 
 
 def _msaf_content_to_a2a_part(content: MsafContent) -> Part:
     """Convert an MSAF Content object to an A2A Part."""
     if content.type == "text":
-        return Part(root=TextPart(text=content.text or ""))
+        return Part(text=content.text or "")
 
     if content.type == "function_call":
         metadata: dict[str, Any] = {"msaf_type": "function_call"}
@@ -186,7 +192,7 @@ def _msaf_content_to_a2a_part(content: MsafContent) -> Part:
     if content.output is not None:
         data["output"] = str(content.output)
 
-    return Part(root=DataPart(data=data))
+    return Part(data=ParseDict(data, Value()))
 
 
 def _msaf_messages_to_a2a(messages: list[MsafMessage]) -> list[Message]:
@@ -195,7 +201,7 @@ def _msaf_messages_to_a2a(messages: list[MsafMessage]) -> list[Message]:
     for msg in messages:
         if msg.role == "system":
             continue
-        role = Role.user if msg.role == "user" else Role.agent
+        role = Role.ROLE_USER if msg.role == "user" else Role.ROLE_AGENT
         parts = [_msaf_content_to_a2a_part(c) for c in msg.contents]
         if not parts:
             continue
@@ -230,34 +236,29 @@ class MsafAgentExecutor(AgentExecutor):
         self._sessions: dict[str, AgentSession] = {}
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
-        """Execute the agent and publish results to the event queue."""
+        """Execute the agent and publish results to the event queue.
+
+        Follows the v1.0 task-lifecycle streaming pattern: a Task object is
+        enqueued first, followed by ``TaskStatusUpdateEvent`` entries until a
+        terminal state is reached.
+        """
         user_input = context.get_user_input()
         task_id = context.task_id or str(uuid.uuid4())
         context_id = context.context_id or str(uuid.uuid4())
 
-        if not context.current_task:
-            await event_queue.enqueue_event(
-                TaskStatusUpdateEvent(
-                    task_id=task_id,
-                    context_id=context_id,
-                    status=TaskStatus(
-                        state=TaskState.submitted,
-                        message=context.message,
-                        timestamp=datetime.now(timezone.utc).isoformat(),
-                    ),
-                    final=False,
-                )
-            )
+        task = context.current_task or Task(
+            id=task_id,
+            context_id=context_id,
+            status=TaskStatus(state=TaskState.TASK_STATE_SUBMITTED, message=context.message),
+            history=[context.message] if context.message is not None else [],
+        )
+        await event_queue.enqueue_event(task)
 
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
                 task_id=task_id,
                 context_id=context_id,
-                status=TaskStatus(
-                    state=TaskState.working,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                ),
-                final=False,
+                status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
             )
         )
 
@@ -294,12 +295,7 @@ class MsafAgentExecutor(AgentExecutor):
                     TaskStatusUpdateEvent(
                         task_id=task_id,
                         context_id=context_id,
-                        status=TaskStatus(
-                            state=TaskState.working,
-                            message=intermediate_msg,
-                            timestamp=datetime.now(timezone.utc).isoformat(),
-                        ),
-                        final=False,
+                        status=TaskStatus(state=TaskState.TASK_STATE_WORKING, message=intermediate_msg),
                     )
                 )
 
@@ -308,22 +304,13 @@ class MsafAgentExecutor(AgentExecutor):
                 final_message = a2a_messages[-1]
             else:
                 response_text = response.text if hasattr(response, "text") else str(response)
-                final_message = Message(
-                    message_id=str(uuid.uuid4()),
-                    role=Role.agent,
-                    parts=[Part(root=TextPart(text=response_text))],
-                )
+                final_message = new_text_message(text=response_text, role=Role.ROLE_AGENT)
 
             await event_queue.enqueue_event(
                 TaskStatusUpdateEvent(
                     task_id=task_id,
                     context_id=context_id,
-                    status=TaskStatus(
-                        state=TaskState.completed,
-                        message=final_message,
-                        timestamp=datetime.now(timezone.utc).isoformat(),
-                    ),
-                    final=True,
+                    status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED, message=final_message),
                 )
             )
         except Exception as e:
@@ -333,35 +320,56 @@ class MsafAgentExecutor(AgentExecutor):
                     task_id=task_id,
                     context_id=context_id,
                     status=TaskStatus(
-                        state=TaskState.failed,
-                        message=Message(
-                            message_id=str(uuid.uuid4()),
-                            role=Role.agent,
-                            parts=[Part(root=TextPart(text=str(e)))],
-                        ),
-                        timestamp=datetime.now(timezone.utc).isoformat(),
+                        state=TaskState.TASK_STATE_FAILED,
+                        message=new_text_message(text=str(e), role=Role.ROLE_AGENT),
                     ),
-                    final=True,
                 )
             )
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Cancel the ongoing task."""
         task_id = context.task_id or str(uuid.uuid4())
+        context_id = context.context_id or str(uuid.uuid4())
+
+        if context.current_task is None:
+            await event_queue.enqueue_event(
+                Task(
+                    id=task_id,
+                    context_id=context_id,
+                    status=TaskStatus(state=TaskState.TASK_STATE_SUBMITTED),
+                )
+            )
+
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
                 task_id=task_id,
-                context_id=context.context_id or str(uuid.uuid4()),
-                status=TaskStatus(
-                    state=TaskState.canceled,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                ),
-                final=True,
+                context_id=context_id,
+                status=TaskStatus(state=TaskState.TASK_STATE_CANCELED),
             )
         )
 
 
-async def create_a2a_app(
+def _build_agent_card(name: str, description: str | None, rpc_url: str) -> AgentCard:
+    return AgentCard(
+        name=name,
+        description=description or "",
+        version="0.1.0",
+        capabilities=AgentCapabilities(),
+        skills=[],
+        default_input_modes=["text/plain"],
+        default_output_modes=["text/plain"],
+        supported_interfaces=[
+            AgentInterface(protocol_binding=TransportProtocol.JSONRPC.value, url=rpc_url),
+            AgentInterface(
+                protocol_binding=TransportProtocol.JSONRPC.value,
+                protocol_version=PROTOCOL_VERSION_0_3,
+                url=rpc_url,
+            ),
+        ],
+    )
+
+
+async def create_a2a_routes(
     agent: Agent,
     name: str,
     description: str | None,
@@ -369,8 +377,8 @@ async def create_a2a_app(
     sub_agent_tools: list[FunctionTool],
     mcp_tool_configs: list[McpTool] | None = None,
     agent_factory: MsafAgentFactory | None = None,
-) -> A2AStarletteApplication:
-    """Create an A2A Starlette application from a Microsoft Agent Framework agent.
+) -> list[Any]:
+    """Build A2A Starlette routes (agent card + JSON-RPC) for a Microsoft Agent Framework agent.
 
     Args:
         agent: The Microsoft Agent Framework agent to convert
@@ -382,7 +390,7 @@ async def create_a2a_app(
         agent_factory: Factory used to create MCP tools per request
 
     Returns:
-        An A2AStarletteApplication instance
+        A list of Starlette ``Route`` objects to mount on a Starlette/FastAPI app.
     """
     task_store = InMemoryTaskStore()
     agent_executor = MsafAgentExecutor(
@@ -391,25 +399,18 @@ async def create_a2a_app(
         mcp_tool_configs=mcp_tool_configs,
         agent_factory=agent_factory,
     )
-    request_handler = DefaultRequestHandler(agent_executor=agent_executor, task_store=task_store)
-
-    agent_card = AgentCard(
-        name=name,
-        description=description or "",
-        url=rpc_url,
-        version="0.1.0",
-        capabilities=AgentCapabilities(),
-        skills=[],
-        default_input_modes=["text/plain"],
-        default_output_modes=["text/plain"],
-        supports_authenticated_extended_card=False,
-    )
-    logger.info("Built agent card: %s", agent_card.model_dump_json())
-
-    return A2AStarletteApplication(
+    agent_card = _build_agent_card(name=name, description=description, rpc_url=rpc_url)
+    request_handler = DefaultRequestHandler(
+        agent_executor=agent_executor,
+        task_store=task_store,
         agent_card=agent_card,
-        http_handler=request_handler,
     )
+    logger.info("Built agent card: %s", agent_card)
+
+    routes: list[Any] = []
+    routes.extend(create_agent_card_routes(agent_card))
+    routes.extend(create_jsonrpc_routes(request_handler, rpc_url="/", enable_v0_3_compat=True))
+    return routes
 
 
 def to_a2a(
@@ -447,10 +448,12 @@ def to_a2a(
     """
     factory = agent_factory or MsafAgentFactory(retry=Retry(total=2))
 
-    return to_starlette(lambda: _build_app(agent, name, description, rpc_url, sub_agents or [], tools or [], factory))
+    return to_starlette(
+        lambda: _build_routes(agent, name, description, rpc_url, sub_agents or [], tools or [], factory)
+    )
 
 
-async def _build_app(
+async def _build_routes(
     agent: Agent,
     name: str,
     description: str | None,
@@ -458,15 +461,15 @@ async def _build_app(
     sub_agents: list[SubAgent],
     tools: list[McpTool],
     factory: MsafAgentFactory,
-) -> A2AStarletteApplication:
-    """Load sub-agents and return the A2A app.
+) -> list[Any]:
+    """Load sub-agents and return the A2A routes.
 
     MCP tools are created per-request inside the executor; no connections are
     established here.
     """
     sub_agent_tools = await factory.load_sub_agents(sub_agents)
 
-    return await create_a2a_app(
+    return await create_a2a_routes(
         agent=agent,
         name=name,
         description=description,
@@ -478,16 +481,12 @@ async def _build_app(
 
 
 def to_starlette(
-    a2a_app_creator: Callable[[], Awaitable[A2AStarletteApplication]],
+    routes_builder: Callable[[], Awaitable[list[Any]]],
 ) -> Starlette:
-    """Convert an A2A application creator to a Starlette application.
+    """Wrap an async A2A-routes builder in a Starlette application.
 
-    Args:
-        a2a_app_creator: A callable that creates an A2AStarletteApplication
-            asynchronously during startup.
-
-    Returns:
-        A Starlette application that can be run with uvicorn
+    The builder runs during lifespan startup; its returned routes are appended
+    to the application's router so they take effect once startup completes.
     """
     # Filter out health check logs from uvicorn access logger
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
@@ -495,12 +494,10 @@ def to_starlette(
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
-        a2a_app = await a2a_app_creator()
-        # Add A2A routes to the main app
-        a2a_app.add_routes_to_app(app)
+        routes = await routes_builder()
+        app.router.routes.extend(routes)
         yield
 
-    # Create a Starlette app that will be configured during startup
     starlette_app = Starlette(lifespan=lifespan)
 
     # Instrument the Starlette app with OpenTelemetry

@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from a2a.client.errors import A2AClientHTTPError
+from a2a.client.errors import AgentCardResolutionError
 from agenticlayer.shared.config import InteractionType, McpTool, SubAgent
 from asgi_lifespan import LifespanManager
 from fastmcp import FastMCP
@@ -103,8 +103,8 @@ class TestMsafAgentIntegration:
             ),
         ]
 
-        # Expect: App creation should fail with A2AClientHTTPError
-        with pytest.raises(A2AClientHTTPError, match="Network communication error"):
+        # Expect: App creation should fail with AgentCardResolutionError
+        with pytest.raises(AgentCardResolutionError, match="Network communication error"):
             async with msaf_app_factory(agent=agent, sub_agents=sub_agents):
                 pass
 

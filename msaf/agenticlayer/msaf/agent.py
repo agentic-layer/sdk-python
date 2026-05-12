@@ -3,14 +3,13 @@ Convert Sub Agents and Tools into agent-framework FunctionTools and MCPStreamabl
 """
 
 import logging
-from typing import Any
 
 import httpx
-from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
-from a2a.client.helpers import create_text_message_object
-from a2a.types import AgentCapabilities, TaskState
+from a2a.client import A2ACardResolver, ClientConfig, create_client
+from a2a.helpers import new_text_message
+from a2a.types import AgentCapabilities, AgentInterface, Role, SendMessageRequest, TaskState
 from a2a.types import AgentCard as A2AAgentCard
-from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
+from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH, TransportProtocol
 from agent_framework._mcp import MCPStreamableHTTPTool
 from agent_framework._tools import FunctionTool
 from agenticlayer.shared.config import McpTool, SubAgent
@@ -43,29 +42,35 @@ def _make_a2a_tool(
             minimal_card = A2AAgentCard(
                 name=name,
                 description=description,
-                url=url,
                 version="0.1.0",
                 capabilities=AgentCapabilities(),
                 skills=[],
                 default_input_modes=["text/plain"],
                 default_output_modes=["text/plain"],
-                supports_authenticated_extended_card=False,
+                supported_interfaces=[
+                    AgentInterface(protocol_binding=TransportProtocol.JSONRPC.value, url=url),
+                ],
             )
-            factory = ClientFactory(ClientConfig(httpx_client=http_client))
-            client = factory.create(minimal_card)
+            client = await create_client(minimal_card, client_config=ClientConfig(httpx_client=http_client))
 
-            message = create_text_message_object(content=request)
+            message = new_text_message(text=request, role=Role.ROLE_USER)
             response_text = f"No response from agent {name}"
-            async for event in client.send_message(message):
-                # ClientEvent is tuple[Task, update] or a Message; use isinstance to distinguish
-                if not isinstance(event, tuple):
-                    continue
-                task: Any = event[0]
-                if task.status.state == TaskState.completed and task.status.message:
-                    texts = [p.root.text for p in task.status.message.parts if hasattr(p.root, "text")]
-                    if texts:
-                        response_text = "\n".join(texts)
-                        break
+            send_request = SendMessageRequest(message=message)
+            async for chunk in client.send_message(send_request):
+                if chunk.HasField("status_update"):
+                    status = chunk.status_update.status
+                    if status.state == TaskState.TASK_STATE_COMPLETED and status.HasField("message"):
+                        texts = [p.text for p in status.message.parts if p.HasField("text")]
+                        if texts:
+                            response_text = "\n".join(texts)
+                            break
+                elif chunk.HasField("task"):
+                    status = chunk.task.status
+                    if status.state == TaskState.TASK_STATE_COMPLETED and status.HasField("message"):
+                        texts = [p.text for p in status.message.parts if p.HasField("text")]
+                        if texts:
+                            response_text = "\n".join(texts)
+                            break
         return response_text
 
     return FunctionTool(
@@ -95,8 +100,8 @@ class MsafAgentFactory:
     async def load_sub_agents(self, sub_agents: list[SubAgent]) -> list[FunctionTool]:
         """Fetch agent cards and create FunctionTools for sub-agents.
 
-        Raises :class:`~a2a.client.errors.A2AClientHTTPError` if any agent card
-        is unreachable (after retries), causing app startup to fail early.
+        Raises a client HTTP error if any agent card is unreachable (after
+        retries), causing app startup to fail early.
 
         Args:
             sub_agents: List of sub-agent configurations.
@@ -110,13 +115,21 @@ class MsafAgentFactory:
             async with httpx.AsyncClient(transport=self.transport, timeout=self.timeout) as client:
                 resolver = A2ACardResolver(httpx_client=client, base_url=base_url)
                 agent_card = await resolver.get_agent_card()
+            sub_agent_url = next(
+                (
+                    i.url
+                    for i in agent_card.supported_interfaces
+                    if i.protocol_binding == TransportProtocol.JSONRPC.value
+                ),
+                base_url,
+            )
             tool = _make_a2a_tool(
                 name=sub_agent.name,
                 description=agent_card.description,
-                url=agent_card.url,
+                url=sub_agent_url,
                 timeout=self.timeout,
             )
-            logger.info("Loaded sub-agent %s from %s", sub_agent.name, agent_card.url)
+            logger.info("Loaded sub-agent %s from %s", sub_agent.name, sub_agent_url)
             tools.append(tool)
         return tools
 

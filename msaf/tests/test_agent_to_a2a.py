@@ -2,26 +2,27 @@
 
 from typing import Any
 
-from a2a.types import DataPart, TextPart
 from agent_framework import Content as MsafContent
+from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel
 
 from agenticlayer.msaf.agent_to_a2a import _msaf_content_to_a2a_part
 
 
-def _data(content: MsafContent) -> tuple[dict[str, Any], dict[str, Any] | None]:
+def _data(content: MsafContent) -> tuple[dict[str, Any], dict[str, Any]]:
     part = _msaf_content_to_a2a_part(content)
-    root = part.root
-    assert isinstance(root, DataPart)
-    return root.data, root.metadata
+    assert part.HasField("data"), "expected a data part"
+    data = MessageToDict(part.data) if part.HasField("data") else {}
+    metadata = MessageToDict(part.metadata) if part.HasField("metadata") else {}
+    return data, metadata
 
 
 class TestTextContent:
     def test_text_content_returns_text_part(self) -> None:
         content = MsafContent.from_text("hello world")
         part = _msaf_content_to_a2a_part(content)
-        assert isinstance(part.root, TextPart)
-        assert part.root.text == "hello world"
+        assert part.HasField("text")
+        assert part.text == "hello world"
 
 
 class TestFunctionCall:
@@ -157,8 +158,10 @@ class TestMcpServerToolResult:
 class TestFallback:
     def test_unmapped_type_uses_legacy_flat_shape(self) -> None:
         # `error` content is not in the four covered types; it should still
-        # produce a DataPart and must not gain `msaf_type`.
+        # produce a data Part and must not gain `msaf_type`.
         content = MsafContent.from_error(message="kaboom", error_code="E1")
-        data, metadata = _data(content)
+        part = _msaf_content_to_a2a_part(content)
+        assert part.HasField("data")
+        data = MessageToDict(part.data)
         assert data["type"] == "error"
-        assert metadata is None
+        assert not part.HasField("metadata") or MessageToDict(part.metadata) == {}
