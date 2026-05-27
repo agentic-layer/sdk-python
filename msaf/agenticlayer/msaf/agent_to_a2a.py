@@ -288,9 +288,9 @@ class MsafAgentExecutor(AgentExecutor):
 
             a2a_messages = _msaf_messages_to_a2a(response.messages) if response.messages else []
 
-            # Emit intermediate messages (tool calls/results) as working events
-            # so they end up in the task history.
-            for intermediate_msg in a2a_messages[:-1]:
+            # Emit all messages (tool calls/results and the final response) as
+            # working events so they end up in the task history.
+            for intermediate_msg in a2a_messages:
                 await event_queue.enqueue_event(
                     TaskStatusUpdateEvent(
                         task_id=task_id,
